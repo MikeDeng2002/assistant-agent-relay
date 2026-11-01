@@ -191,7 +191,7 @@ class HarkWeb:
 
     def draft(self) -> str:
         """What's in Hark's message box right now."""
-        return message_box(self.page(), self.selectors).input_value()
+        return message_box(self.page(), self.selectors, reload=False).input_value()
 
     def tab_url(self) -> str:
         """Where the Hark tab is."""
@@ -202,7 +202,7 @@ class HarkWeb:
         page = self.page()
         if not shows(page.url, url):
             try:
-                draft = message_box(page, self.selectors).input_value()
+                draft = message_box(page, self.selectors, reload=False).input_value()
             except HarkError:
                 draft = ""  # this page has no message box, so nothing is lost by leaving it
             if draft:
@@ -211,12 +211,14 @@ class HarkWeb:
             deadline = time.monotonic() + BOX_SECONDS
             while True:
                 try:
-                    message_box(page, self.selectors)
+                    message_box(page, self.selectors, reload=False)
                     break
                 except HarkError:
                     if time.monotonic() > deadline:
-                        raise
+                        break  # type_and_send gets one recovery attempt
                     sleep(0.5)
+        if not shows(page.url, url):
+            raise HarkError("Hark did not open the selected thread. Check the intended thread and try again.")
         type_and_send(page, text, self.selectors, self.sent_seconds)
 
     def sign_in(self, wait_seconds: float = 600, sleep: Callable[[float], None] = time.sleep,
@@ -241,10 +243,27 @@ class HarkWeb:
                         "in the dedicated Chrome, then try again.")
 
 
-def message_box(page, selectors: Selectors = Selectors()):
+def _find_box(page, selectors: Selectors):
     box = page.get_by_role("textbox", name=selectors.box_name, exact=True)
     if box.count() != 1:
         box = page.locator(selectors.box_fallback)
+    return box
+
+
+def message_box(page, selectors: Selectors = Selectors(), *, reload: bool = True):
+    """Hark's message box. If the tab shows no box (a hung or half-loaded page; seen 2026-11-01), the
+    chat page is loaded again once before giving up."""
+    box = _find_box(page, selectors)
+    if box.count() != 1 and reload and on_hark(page.url):
+        url = page.url
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(4000)
+        except Exception:
+            pass
+        if not shows(page.url, url):
+            raise HarkError("Hark switched pages while reloading the chat. Check the intended thread and try again.")
+        box = _find_box(page, selectors)
     if box.count() != 1:
         raise HarkError(f"found {box.count()} message boxes on {page.url.split('?')[0]}, not one. "
                         "If the tab shows a sign-in page, run: uv run bench hark-login")
