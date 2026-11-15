@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study Console</title>
+<!-- Page for `bench console` at /study (bench/console.py, bench/study.py). It walks one participant
+     through a task day: interview, the chat with each agent, the questions after each, the blind
+     comparison, the day's extra questions and the agents' process reports. The questions come from
+     tasks/<folder>/study.json, which is private and kept out of git. -->
+<style>
+:root {
+  --bg: #f5f5f2; --surface: #fff; --surface-2: #efeeea; --border: #e2e0da;
+  --text: #1c1c1a; --muted: #66655f; --faint: #97958d;
+  --accent: #2d56c9; --accent-text: #fff; --accent-soft: #e8eefc;
+  --ok: #1f8a4c; --ok-soft: #e3f4ea; --warn: #8a5a00; --warn-soft: #fff4d6; --danger: #b8402c; --danger-soft: #fbe9e5;
+  --agent: #f0efe9; --shadow: 0 1px 2px rgba(20,20,15,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --surface: #1d1d1b; --surface-2: #262623; --border: #33332f;
+    --text: #ecebe6; --muted: #a3a29b; --faint: #75746d;
+    --accent: #7d9bff; --accent-text: #0e1220; --accent-soft: #1f2843;
+    --ok: #5cc98a; --ok-soft: #173325; --warn: #f0c060; --warn-soft: #3a2e12; --danger: #f08a75; --danger-soft: #3d1f19;
+    --agent: #262623; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141413; --surface: #1d1d1b; --surface-2: #262623; --border: #33332f;
+  --text: #ecebe6; --muted: #a3a29b; --faint: #75746d;
+  --accent: #7d9bff; --accent-text: #0e1220; --accent-soft: #1f2843;
+  --ok: #5cc98a; --ok-soft: #173325; --warn: #f0c060; --warn-soft: #3a2e12; --danger: #f08a75; --danger-soft: #3d1f19;
+  --agent: #262623; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); }
+.top { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+.top h1 { font-size: 16px; margin: 0; font-weight: 650; }
+.top .who { color: var(--muted); font-size: 13px; }
+.top .grow { flex: 1; }
+.saved { font-size: 12px; color: var(--muted); }
+.saved.err { color: var(--danger); }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; max-width: 1180px; margin: 0 auto; padding: 20px; }
+.rail { position: sticky; top: 70px; align-self: start; }
+.rail .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin: 14px 0 4px; }
+.rail button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: none; padding: 5px 8px; border-radius: 7px; cursor: pointer; color: var(--muted); font-size: 14px; }
+.rail button .tick { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--border); flex: none; display: grid; place-items: center; font-size: 10px; }
+.rail button.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+.rail button.here { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.rail button.here .tick { border-color: var(--accent); }
+.rail button:disabled { opacity: .45; cursor: default; }
+main { min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; box-shadow: var(--shadow); }
+.panel + .panel { margin-top: 16px; }
+.kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: 6px; }
+h2 { font-size: 22px; line-height: 1.3; margin: 0 0 8px; font-weight: 650; }
+h3 { font-size: 15px; margin: 0 0 8px; }
+.help { color: var(--muted); margin: 0 0 14px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.spacer { flex: 1; }
+.btn { border: 1px solid var(--border); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--faint); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin: 0 0 18px; }
+.progress > div { height: 100%; background: var(--accent); transition: width .2s; }
+.opts { display: grid; gap: 8px; margin: 6px 0 4px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; text-align: left; border: 1.5px solid var(--border); background: var(--surface); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.opt:hover { border-color: var(--faint); }
+.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.opt .t { font-weight: 600; }
+.opt .d { color: var(--muted); font-size: 13px; }
+.opt .ex { color: var(--faint); font-size: 13px; font-style: italic; margin-top: 4px; }
+.cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cards .opt { flex-direction: column; gap: 2px; padding: 14px 16px; }
+.cards .num { font-size: 12px; color: var(--faint); }
+textarea, input[type=text], input[type=number], input:not([type]), select { width: 100%; border: 1.5px solid var(--border); border-radius: 9px; background: var(--surface); padding: 9px 11px; }
+textarea { min-height: 120px; resize: vertical; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
+.voice { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.mic { display: inline-flex; gap: 6px; align-items: center; border: 1.5px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 14px; cursor: pointer; font-size: 14px; }
+.mic .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); opacity: .35; }
+.mic.on { border-color: var(--danger); color: var(--danger); }
+.mic.on .dot { opacity: 1; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.voice .note { font-size: 12px; color: var(--muted); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px 11px; font-size: 13px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.statusbox { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.statusbox .lbl { font-size: 13px; color: var(--muted); }
+.probe { margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: var(--warn-soft); }
+.probe .lbl { font-size: 12px; color: var(--warn); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.nav { display: flex; gap: 10px; margin-top: 22px; align-items: center; }
+.err { color: var(--danger); font-size: 13px; }
+.scale { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.scale button { border: 1.5px solid var(--border); background: var(--surface); border-radius: 9px; padding: 10px 0; cursor: pointer; font-weight: 600; }
+.scale button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.scale-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+table.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.grid th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 4px 6px; }
+table.grid td { padding: 4px 6px; vertical-align: top; }
+table.grid input, table.grid select { padding: 6px 8px; }
+.budget { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.budget label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+.cardview { display: grid; gap: 2px; }
+.cardview .f { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); align-items: start; }
+.cardview .f:last-child { border-bottom: 0; }
+.cardview .k { font-size: 13px; color: var(--muted); }
+.cardview .v { white-space: pre-wrap; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.tag.firm { background: var(--danger-soft); color: var(--danger); }
+.tag.preference { background: var(--accent-soft); color: var(--accent); }
+.tag.open, .tag.dont_know { background: var(--warn-soft); color: var(--warn); }
+.banner { padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); margin-bottom: 14px; font-size: 14px; }
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+.banner.bad { background: var(--danger-soft); color: var(--danger); }
+/* Chat */
+.chatgrid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 16px; }
+.chatpane { display: flex; flex-direction: column; height: calc(100vh - 150px); min-height: 520px; padding: 0; overflow: hidden; }
+.chathead { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.timer { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 18px; }
+.timer.warn { color: var(--warn); } .timer.bad { color: var(--danger); }
+.turns { font-size: 13px; color: var(--muted); }
+.msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 82%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.me { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 4px; }
+.msg.agent { align-self: flex-start; background: var(--agent); border-bottom-left-radius: 4px; }
+.msg .meta { display: block; font-size: 11px; opacity: .7; margin-top: 4px; }
+.msg.me a { color: inherit; }
+.stepmark { align-self: center; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.compose { border-top: 1px solid var(--border); padding: 12px 16px; display: grid; gap: 8px; }
+.compose textarea { min-height: 70px; }
+.side .panel { padding: 16px; }
+.side h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.side ul { padding-left: 18px; margin: 0; font-size: 13px; color: var(--muted); }
+.side li + li { margin-top: 4px; }
+.jobline { font-size: 12px; color: var(--muted); }
+.handoffs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+.handoffs .h { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; max-height: 420px; overflow-y: auto; white-space: pre-wrap; font-size: 14px; }
+.handoffs .h b { display: block; margin-bottom: 6px; font-size: 13px; }
+details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.files { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+  .rail { position: static; display: flex; gap: 6px; overflow-x: auto; }
+  .rail .grp { display: none; }
+  .rail button { width: auto; white-space: nowrap; }
+  .chatgrid { grid-template-columns: minmax(0, 1fr); }
+  .cards, .handoffs, .budget { grid-template-columns: minmax(0, 1fr); }
+  .cardview .f { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .panel { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Study console</h1>
+  <span class="who" id="who"></span>
+  <span class="grow"></span>
+  <span class="saved" id="saved"></span>
+  <a class="small" href="/" id="console-link">Agent console</a>
+</header>
+<div class="layout">
+  <nav class="rail" id="rail" aria-label="Steps"></nav>
+  <main id="main"><div class="panel">Loading…</div></main>
+</div>
+
+<script>
+(() => {
+  const TOKEN = (() => { try { return __CONSOLE_TOKEN__; } catch (e) { return null; } })();
+  const ONLINE = typeof TOKEN === 'string' && !!TOKEN;
+  const POLL_MS = 2000;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const words = s => String(s || '').trim().split(/\s+/).filter(Boolean).length;
+  const filled = v => v != null && v !== '' && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.values(v).some(x => x !== '' && x != null && x !== false));
+  const localIso = iso => { if (!iso) return iso; const d = new Date(iso); if (isNaN(d)) return iso; const off = -d.getTimezoneOffset(); const p = n => String(Math.abs(n)).padStart(2, '0');
+    return new Date(d.getTime() + off * 60000).toISOString().slice(0, 23) + (off >= 0 ? '+' : '-') + p(Math.floor(Math.abs(off) / 60)) + ':' + p(Math.abs(off) % 60); };
+  const nowIso = () => { const d = new Date(Date.now() + clockOffset); const off = -d.getTimezoneOffset(); const p = n => String(Math.abs(n)).padStart(2, '0');
+    return new Date(d.getTime() + off * 60000).toISOString().slice(0, 23) + (off >= 0 ? '+' : '-') + p(Math.floor(Math.abs(off) / 60)) + ':' + p(Math.abs(off) % 60); };
+  const clock = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const local = { get(k) { try { return JSON.parse(localStorage.getItem('study.' + k)); } catch (e) { return null; } },
+                  set(k, v) { try { localStorage.setItem('study.' + k, JSON.stringify(v)); } catch (e) {} } };
+
+  let spec = null;           // the task's questions and messages (tasks/<folder>/study.json)
+  let S = null;              // this participant's state, saved as progress.json
+  let agentsAvail = [];      // agents the console can send to
+  let snap = null, snapVersion = null, jobs = [], dryRun = false, clockOffset = 0;
+  let polling = null;
+  let saveTimer = null, saving = 0, saveErr = '';
+
+  // MARK: Server
+
+  async function api(path, body) {
+    if (!ONLINE) throw new Error('not connected to bench console');
+    const r = await fetch(path, { method: body ? 'POST' : 'GET', cache: 'no-store',
+      headers: { 'X-Console-Token': TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined });
+    let out = {};
+    try { out = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(out.error || `the console answered ${r.status}`);
+    return out;
+  }
+
+  function showSaved() {
+    const el = $('saved');
+    el.classList.toggle('err', !!saveErr);
+    el.textContent = saveErr ? `Not saved to disk: ${saveErr} (kept in this browser)` : saving ? 'Saving…' : S && S.savedAt ? `Saved ${clock(S.savedAt)}` : '';
+  }
+
+  // Writes one of the participant's files. Everything is also kept in this browser, so nothing is lost offline.
+  async function saveFile(path, payload) {
+    if (!S) return;
+    local.set(`${S.pid}.${path}`, payload);
+    if (!ONLINE) { saveErr = 'offline'; showSaved(); return; }
+    saving++; showSaved();
+    try {
+      await api('/api/study/save', { pid: S.pid, path, ...payload });
+      saveErr = ''; S.savedAt = new Date().toISOString();
+    } catch (e) { saveErr = e.message; }
+    saving--; showSaved();
+  }
+  function saveProgress(now) {
+    if (!S) return;
+    local.set(`${S.pid}.progress`, S);
+    clearTimeout(saveTimer);
+    const go = () => saveFile('progress.json', { data: { task: S.task, day: S.day, stage: S.stage, state: S } });
+    if (now) return go();
+    saveTimer = setTimeout(go, 700);
+  }
+
+  // MARK: Spec helpers
+
+  const cardOf = id => (spec.cards || []).find(c => c.id === id);
+  const fieldOf = id => (spec.fields || []).find(f => f.id === id);
+  const preQs = () => spec.pre.flatMap(st => st.questions.map(q => ({ ...q, _step: st.id })));
+  const D = () => { const d = String(S.day); S.d = S.d || {}; return (S.d[d] = S.d[d] || { chats: {}, after: {}, comparison: {}, wyd: {}, learning: {}, process: {}, done: {} }); };
+  const order = () => S.day === 1 ? S.session.day1_order : S.session.day2_order;
+  const labelOf = agent => { const bl = (S.session.blind_labels || {})[String(S.day)] || {}; return bl.A === agent ? 'A' : bl.B === agent ? 'B' : '?'; };
+  const agentOfLabel = l => ((S.session.blind_labels || {})[String(S.day)] || {})[l];
+  const stepName = (kind, n) => `DAY ${S.day} ${kind}${n != null ? ' ' + n : ''}`;
+
+  function effectiveCard() { const A = S.pre.answers; return A.card === 'none' ? A.closest_card : A.card; }
+
+  function cond(c, A, X) {
+    if (!c) return true;
+    if (c.all) return c.all.every(x => cond(x, A, X));
+    if (c.any) return c.any.some(x => cond(x, A, X));
+    if (c.not) return !cond(c.not, A, X);
+    if ('card' in c) return X.card === c.card;
+    if ('answered' in c) return filled(A[c.answered]);
+    if ('top_status' in c) return X.topStatus === c.top_status;
+    if ('has_open' in c) return !!(X.openDecisions && X.openDecisions.length) === c.has_open;
+    const v = A[c.q];
+    if ('eq' in c) return v === c.eq;
+    if ('ne' in c) return v !== c.ne;
+    if ('in' in c) return c.in.includes(v);
+    if ('lte' in c) return typeof v === 'number' && v <= c.lte;
+    if ('gte' in c) return typeof v === 'number' && v >= c.gte;
+    if ('has_any' in c) return Array.isArray(v) && v.some(x => c.has_any.includes(x));
+    if ('ne_q' in c) return filled(v) && filled(A[c.ne_q]) && v !== A[c.ne_q];
+    return true;
+  }
+  function qText(q, A, X) {
+    let t = q.text || '';
+    if (q.text_by) { const hit = q.text_by.find(v => cond(v.when, A, X)); if (hit) t = hit.text; }
+    return t.replace(/\{(\w+)\}/g, (m, k) => { const v = X[k] != null ? X[k] : A[k]; return v == null || v === '' ? '…' : Array.isArray(v) ? v.join(', ') : String(v); });
+  }
+  function optLabel(q, v) { const o = (q.options || []).find(o => o.value === v); return o ? o.label : v; }
+
+  function fmt(q, v) {
+    if (!filled(v)) return '';
+    switch (q.type) {
+      case 'single': case 'abtie': return optLabel(q, v);
+      case 'cards': return v === 'none' ? (q.none_option || 'None') : (cardOf(v) || {}).title || v;
+      case 'multi': return v.map(x => optLabel(q, x)).join(', ');
+      case 'confirm': return q.confirm || 'Yes';
+      case 'scale7': return v === 'unable_to_judge' ? 'Unable to judge' : `${v} of 7`;
+      case 'people': return v.filter(p => p.alias).map(p => `${p.alias} (${[p.role, p.confirmed ? 'confirmed' : 'not confirmed yet', p.relation].filter(Boolean).join(', ')})`).join('; ');
+      case 'budget': {
+        const cur = v.currency || 'USD', sym = cur === 'USD' ? '$' : cur + ' ';
+        const range = v.amount_low && v.amount_high ? `${sym}${v.amount_low}–${v.amount_high}` : v.amount_low ? `from ${sym}${v.amount_low}` : v.amount_high ? `up to ${sym}${v.amount_high}` : '';
+        return [range && `${range}${v.per ? ' per ' + v.per : ''}`, v.firm_limit ? `firm limit ${sym}${v.firm_limit}${v.per ? ' per ' + v.per : ''}` : 'no firm limit', v.note].filter(Boolean).join('; ');
+      }
+      case 'sources': return v.map(s => `${s.detail || '?'} — ${s.agent || 'either agent'} via ${s.source || '?'} (${s.access_verified === 'yes' ? 'verified' : 'not verified'})`).join('; ');
+      default: return String(v);
+    }
+  }
+
+  // Pre-task: which questions the participant's answers lead to, and what each card field says
+  function preCtx(withTop = true) {
+    const A = S.pre.answers, card = effectiveCard(), c = cardOf(card);
+    const X = { card, card_title: c ? c.title : '', card_title_lower: c ? c.title.toLowerCase() : 'gathering' };
+    if (withTop && A.top_pref) { X.topStatus = fieldStatus(A.top_pref); X.top_pref_label = topPrefLabel(A.top_pref); }
+    return X;
+  }
+  function visiblePre(stepId) {
+    const X = preCtx(false), A = S.pre.answers;
+    return preQs().filter(q => (!stepId || q._step === stepId) && cond(q.when, A, X));
+  }
+  function fieldQs(fid) { return visiblePre().filter(q => q.field === fid); }
+  function fieldStatus(fid) {
+    const ov = (S.pre.answers.__override || {})[fid];
+    if (ov && ov.status) return ov.status;
+    const A = S.pre.answers, qs = fieldQs(fid);
+    const set = qs.filter(q => q.status && A[q.id + '__status']).map(q => A[q.id + '__status']);
+    if (set.length) return set[set.length - 1];
+    return qs.some(q => filled(A[q.id])) ? 'preference' : 'dont_know';
+  }
+  function fieldAnswer(fid) {
+    const ov = (S.pre.answers.__override || {})[fid];
+    if (ov && filled(ov.answer)) return ov.answer;
+    const A = S.pre.answers, parts = [];
+    fieldQs(fid).forEach((q, i) => {
+      const v = fmt(q, A[q.id]);
+      if (v) parts.push(i === 0 && !q.label ? v : `${q.label || shortQ(q)}: ${v}`);
+      if (q.probe && filled(A[q.id + '__probe'])) parts.push(`${q.probe.text} ${A[q.id + '__probe']}`);
+    });
+    return parts.join('\n');
+  }
+  const shortQ = q => (q.text || '').replace(/\{.*?\}/g, '').split(/[?.]/)[0].slice(0, 60);
+  function fieldAlternative(fid) { const A = S.pre.answers; const alts = fieldQs(fid).map(q => A[q.id + '__alt']).filter(filled); return alts.length ? alts.join('\n') : null; }
+  function topPrefLabel(fid) { const f = fieldOf(fid); const a = fieldAnswer(fid).split('\n').map(x => x.replace(/^[^:]{1,40}: /, '')).filter(x => !/^(yes|no)$/i.test(x)).join('; '); return f ? `${f.label.split(':')[0].toLowerCase()}: ${a.slice(0, 90)}${a.length > 90 ? '…' : ''}` : fid; }
+  function openDecisions() { return (spec.fields || []).filter(f => fieldStatus(f.id) === 'open').map(f => f.label.split(':')[0].toLowerCase()); }
+
+  // MARK: Stages
+
+  function stages() {
+    const list = [{ key: 'setup', title: 'Session', group: 'Start' }];
+    if (!S.session || !S.session.agents) return list;
+    if (S.day === 1) spec.pre.forEach(st => list.push({ key: 'pre:' + st.id, title: st.title, group: 'Pre-task interview' }));
+    else list.push({ key: 'reread', title: 'Reread your card', group: 'Pre-task' });
+    order().forEach((a, i) => {
+      const n = order().length > 1 ? `Agent ${labelOf(a)}` : a.charAt(0).toUpperCase() + a.slice(1);
+      list.push({ key: 'chat:' + (i + 1), title: `Chat with ${n}`, group: 'Task' });
+      list.push({ key: 'after:' + (i + 1), title: `About ${n}`, group: 'Task' });
+    });
+    if (order().length > 1) list.push({ key: 'compare', title: 'Compare A and B', group: 'Post-task' });
+    if (S.day === 1) list.push({ key: 'day1', title: 'What you would really do', group: 'Post-task' });
+    else order().forEach((a, i) => list.push({ key: 'learn:' + (i + 1), title: `Learning check: Agent ${labelOf(a)}`, group: 'Post-task' }));
+    list.push({ key: 'process', title: 'Process reports', group: 'Post-task' });
+    list.push({ key: 'done', title: 'Finished', group: 'Post-task' });
+    return list;
+  }
+  const isDone = key => key === 'setup' ? !!(S.session && S.session.agents && (S.session.blind_labels || {})[String(S.day)]) : key.startsWith('pre:') ? !!(S.pre.done || {})[key] : !!D().done[key];
+  function reachable(key) {
+    const list = stages(); const i = list.findIndex(s => s.key === key);
+    return i <= 0 || list.slice(0, i).every(s => isDone(s.key));
+  }
+  function go(key) { S.stage = key; stopPollingUnlessNeeded(); saveProgress(); render(); window.scrollTo(0, 0); }
+  function completeStage(key) {
+    if (key.startsWith('pre:')) S.pre.done = { ...(S.pre.done || {}), [key]: true }; else D().done[key] = true;
+    const list = stages(); const i = list.findIndex(s => s.key === key);
+    go(list[Math.min(i + 1, list.length - 1)].key);
+  }
+
+  function renderRail() {
+    if (!S) { $('rail').innerHTML = ''; return; }
+    let grp = '', out = '';
+    for (const st of stages()) {
+      if (st.group !== grp) { grp = st.group; out += `<div class="grp">${esc(grp)}</div>`; }
+      out += `<button type="button" data-go="${esc(st.key)}" class="${S.stage === st.key ? 'here' : ''} ${isDone(st.key) ? 'done' : ''}" ${reachable(st.key) ? '' : 'disabled'}><span class="tick">${isDone(st.key) ? '✓' : ''}</span>${esc(st.title)}</button>`;
+    }
+    $('rail').innerHTML = out;
+    $('who').textContent = S.session && S.session.agents ? `${S.pid} · Day ${S.day} · ${spec.title || S.task}` : S.pid || '';
+  }
+
+  function render() {
+    renderRail(); showSaved();
+    const m = $('main');
+    if (!spec) return;
+    if (!S) return renderStart(m);
+    const key = S.stage || 'setup';
+    if (key === 'setup') return renderSetup(m);
+    if (key.startsWith('pre:')) return renderPre(m, key.slice(4));
+    if (key === 'reread') return renderReread(m);
+    if (key.startsWith('chat:')) return renderChat(m, +key.slice(5));
+    if (key.startsWith('after:')) return renderAfter(m, +key.slice(6));
+    if (key === 'compare') return renderCompare(m);
+    if (key === 'day1') return renderDay1(m);
+    if (key.startsWith('learn:')) return renderLearn(m, +key.slice(6));
+    if (key === 'process') return renderProcess(m);
+    if (key === 'done') return renderDone(m);
+  }
+
+  // MARK: Start and session
+
+  async function renderStart(m) {
+    let list = [];
+    try { list = ONLINE ? (await api('/api/study/list')).participants : []; } catch (e) {}
+    m.innerHTML = `<div class="panel">
+      <div class="kicker">${esc(spec.title || spec.task)}</div>
+      <h2>Who is taking part?</h2>
+      <p class="help">Each participant has an ID like P001. Use the same ID on day 2 to pick up the same card.</p>
+      <div class="row"><input id="pid" placeholder="P001" style="max-width:160px" autocomplete="off"><button class="btn primary" id="pid-go">Start or resume</button><span class="err" id="pid-err"></span></div>
+      ${list.length ? `<h3 style="margin-top:22px">Resume</h3><div class="opts">${list.map(p => `<button class="opt" data-resume="${esc(p.pid)}"><span><span class="t">${esc(p.pid)}</span> <span class="d">day ${esc(p.day || '–')} · ${esc(p.stage || 'not started')} · updated ${esc(new Date(p.updated).toLocaleString())}</span></span></button>`).join('')}</div>` : ''}
+      ${ONLINE ? '' : '<p class="banner">Not opened through <code>bench console</code>: answers stay in this browser (use “Download everything” at the end) and messages can’t be sent to agents.</p>'}
+    </div>`;
+    const start = async pid => {
+      pid = (pid || '').trim().toUpperCase();
+      if (!/^P\d{3,4}$/.test(pid)) { $('pid-err').textContent = 'An ID looks like P001'; return; }
+      await openParticipant(pid);
+    };
+    $('pid-go').onclick = () => start($('pid').value);
+    $('pid').onkeydown = e => { if (e.key === 'Enter') start($('pid').value); };
+    m.querySelectorAll('[data-resume]').forEach(b => b.onclick = () => start(b.dataset.resume));
+  }
+
+  async function openParticipant(pid) {
+    let saved = null;
+    if (ONLINE) { try { const r = await api('/api/study/load?pid=' + encodeURIComponent(pid)); saved = (r.files['progress.json'] || {}).state || null; } catch (e) {} }
+    if (!saved) saved = local.get(`${pid}.progress`);
+    S = saved || { pid, task: spec.task, day: 1, stage: 'setup', session: { participant_id: pid }, pre: { answers: {}, done: {} }, d: {}, cursor: {} };
+    S.cursor = S.cursor || {};
+    render();
+  }
+
+  function renderSetup(m) {
+    const s = S.session, locked = !!S.pre.locked_at;
+    const day1Done = locked && S.d && S.d['1'] && S.d['1'].done && S.d['1'].done.done;
+    const names = agentsAvail.map(a => a.name);
+    const pidNum = parseInt(S.pid.slice(1), 10);
+    const pick = s.agents || names.slice(0, 2);
+    m.innerHTML = `<div class="panel">
+      <div class="kicker">Session · ${esc(S.pid)}</div>
+      <h2>Set up the session</h2>
+      <p class="help">Two agents plan the same gathering, one at a time. The first agent alternates across participants, and the order reverses on day 2.</p>
+      <div class="row" style="gap:18px;align-items:flex-start">
+        <label style="display:grid;gap:4px">Day
+          <select id="s-day"><option value="1" ${S.day === 1 ? 'selected' : ''}>Day 1</option><option value="2" ${S.day === 2 ? 'selected' : ''} ${locked ? '' : 'disabled'}>Day 2${locked ? '' : ' (after day 1)'}</option></select></label>
+        <label style="display:grid;gap:4px">Agents
+          <select id="s-n"><option value="2">Two agents</option><option value="1">One agent only</option></select></label>
+        <label style="display:grid;gap:4px">Agent 1
+          <select id="s-a1">${names.map(n => `<option ${pick[0] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <label style="display:grid;gap:4px" id="s-a2-wrap">Agent 2
+          <select id="s-a2">${names.map(n => `<option ${pick[1] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <label style="display:grid;gap:4px" id="s-first-wrap">Day 1: who goes first
+          <select id="s-first"><option value="0">Agent 1</option><option value="1">Agent 2</option></select></label>
+      </div>
+      <p class="small muted" id="s-note"></p>
+      ${!names.length ? '<p class="banner bad">The console has no agents it can send to. Check config/agents.yaml.</p>' : ''}
+      ${dryRun ? '<p class="banner">The console is in dry-run mode: nothing is sent to the agents. Paste their replies by hand to try the flow.</p>' : ''}
+      ${day1Done && S.day === 1 ? '<p class="banner ok">Day 1 is finished. Switch to Day 2 to continue with the same card.</p>' : ''}
+      <div class="nav"><button class="btn primary" id="s-go">${s.agents ? 'Save and continue' : 'Begin'}</button><span class="err" id="s-err"></span></div>
+    </div>`;
+    const firstDefault = s.day1_order && s.agents ? s.agents.indexOf(s.day1_order[0]) : (pidNum % 2 === 1 ? 0 : 1);
+    $('s-first').value = String(Math.max(0, firstDefault));
+    $('s-n').value = s.agents && s.agents.length === 1 ? '1' : '2';
+    const one = () => $('s-n').value === '1';
+    const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); };
+    const note = () => { showN(); if (one()) { $('s-note').textContent = `Only ${$('s-a1').value}: one chat a day, no A/B comparison.`; return; } const d = +$('s-day').value; const a = [$('s-a1').value, $('s-a2').value]; const f = +$('s-first').value;
+      const d1 = [a[f], a[1 - f]];
+      $('s-note').textContent = d === 1 ? `Day 1 order: ${d1.join(' then ')}. ${S.pid} is ${pidNum % 2 ? 'odd' : 'even'}, so the suggestion is Agent ${pidNum % 2 ? 1 : 2} first.` : `Day 2 reverses day 1: ${(s.day1_order || d1).slice().reverse().join(' then ')}.`; };
+    ['s-day', 's-n', 's-a1', 's-a2', 's-first'].forEach(id => $(id).onchange = note); note();
+    if (s.agents && locked) { $('s-a1').disabled = $('s-a2').disabled = $('s-first').disabled = $('s-n').disabled = true; }
+    $('s-go').onclick = () => {
+      const a = one() ? [$('s-a1').value] : [$('s-a1').value, $('s-a2').value], f = one() ? 0 : +$('s-first').value, day = +$('s-day').value;
+      if (!a[0] || (a.length === 2 && a[0] === a[1])) { $('s-err').textContent = 'Pick two different agents'; return; }
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (!s.agents || !locked) {
+        Object.assign(s, { participant_id: S.pid, interview_mode: 'survey', interviewer: 'self', time_zone: s.time_zone || tz, agents: a,
+          day1_order: a.length === 1 ? a : [a[f], a[1 - f]], day2_order: a.length === 1 ? a : [a[1 - f], a[f]], blind_labels: s.blind_labels || {}, interview_times: s.interview_times || {}, context: s.context || {}, flags: s.flags || [] });
+      }
+      S.day = day;
+      const today = new Date(Date.now() + clockOffset).toLocaleDateString('en-CA');
+      if (!s[`day${day}_date`]) s[`day${day}_date`] = today;
+      if (!s.blind_labels[String(day)]) { const sh = a.length === 1 || Math.random() < 0.5 ? a : [a[1], a[0]]; s.blind_labels[String(day)] = { A: sh[0], B: sh[1] || null }; }
+      saveSession();
+      const list = stages();
+      go((list.find(x => !isDone(x.key) && x.key !== 'setup') || list[list.length - 1]).key);
+    };
+  }
+  function saveSession() { const { ...data } = S.session; return saveFile('session.json', { data }); }
+
+  // MARK: Questionnaires
+
+  // One question at a time. Branching: each question's `when` is checked against the answers so far.
+  // A short answer to a question with a probe gets the probe once; "I don't know" is an answer.
+  function renderQuestions(m, o) {
+    // o: {scope, title, kicker, intro, list, A, X, readOnly, onDone(), doneLabel, audioPrefix}
+    o.token = (o.token || 0) + 1;
+    const visible = () => o.list.filter(q => cond(q.when, o.A, o.X()));
+    let vis = visible();
+    let cur = S.cursor[o.scope];
+    let i = Math.max(0, vis.findIndex(q => q.id === cur));
+    if (!vis.length) { m.innerHTML = '<div class="panel">Nothing to ask here.</div>'; return; }
+    const q = vis[i], A = o.A, X = o.X();
+    const text = qText(q, A, X);
+    const pct = Math.round(100 * i / vis.length);
+    m.innerHTML = `<div class="panel">
+      <div class="kicker">${esc(o.kicker)} · ${i + 1} of ${vis.length}${o.minutes ? ` · about ${o.minutes} min for this part` : ''}</div>
+      <div class="progress"><div style="width:${pct}%"></div></div>
+      ${o.intro && i === 0 ? `<p class="help">${esc(o.intro)}</p>` : ''}
+      <h2>${esc(text)}</h2>
+      ${q.help ? `<p class="help">${esc(qText({ text: q.help }, A, X))}</p>` : ''}
+      <div id="q-body"></div>
+      <div class="nav">
+        <button class="btn" id="q-back" ${i === 0 ? 'disabled' : ''}>Back</button>
+        ${q.status && !o.readOnly ? '<button class="btn" id="q-dk">I don’t know</button>' : ''}
+        ${q.optional && !o.readOnly ? '<button class="btn" id="q-skip">Skip</button>' : ''}
+        <span class="spacer"></span><span class="err" id="q-err"></span>
+        ${q.type === 'lock' ? '' : `<button class="btn primary" id="q-next">${i === vis.length - 1 ? esc(o.doneLabel || 'Finish this part') : 'Next'}</button>`}
+      </div>
+    </div>${o.footer ? o.footer() : ''}`;
+    const body = $('q-body');
+    renderInput(body, q, A, o);
+    const advance = () => {
+      vis = visible();
+      const j = vis.findIndex(x => x.id === q.id);
+      const next = vis[j + 1];
+      if (next) { S.cursor[o.scope] = next.id; saveProgress(); renderQuestions(m, o); window.scrollTo(0, 0); }
+      else { saveProgress(); o.onDone(); }
+    };
+    const next = () => {
+      if (o.readOnly) return advance();
+      const v = A[q.id], st = A[q.id + '__status'];
+      const excused = ['dont_know', 'no_preference', 'open'].includes(st);
+      if (!q.optional && !excused && !['info', 'handoffs', 'readback'].includes(q.type) && !answeredEnough(q, v)) {
+        $('q-err').textContent = q.type === 'confirm' ? 'Continue once you have one in mind' : q.type === 'budget' ? 'Give a range or a limit, and say per person or for the group' : 'Please answer, or choose I don’t know';
+        return;
+      }
+      // Probe once when the answer is thin
+      if (q.probe && !A[q.id + '__probed'] && typeof v === 'string' && words(v) < q.probe.min_words) {
+        A[q.id + '__probed'] = true; saveProgress(); renderQuestions(m, o); return;
+      }
+      A[q.id + '__at'] = A[q.id + '__at'] || nowIso();
+      advance();
+    };
+    o.next = next;
+    $('q-next') && ($('q-next').onclick = next);
+    $('q-back').onclick = () => { const j = vis.findIndex(x => x.id === q.id); if (j > 0) { S.cursor[o.scope] = vis[j - 1].id; saveProgress(); renderQuestions(m, o); } };
+    $('q-dk') && ($('q-dk').onclick = () => { A[q.id + '__status'] = 'dont_know'; A[q.id + '__at'] = nowIso(); saveProgress(); advance(); });
+    $('q-skip') && ($('q-skip').onclick = () => { A[q.id + '__skipped'] = true; advance(); });
+    const first = body.querySelector('textarea, input');
+    if (first && !o.readOnly && !('ontouchstart' in window)) first.focus();
+  }
+  function answeredEnough(q, v) {
+    if (q.type === 'budget') return !!(v && (v.amount_low || v.amount_high || v.firm_limit) && v.per);
+    if (q.type === 'people') return Array.isArray(v) && v.some(p => p.alias);
+    if (q.type === 'sources') return Array.isArray(v) && v.some(s => s.detail);
+    return filled(v);
+  }
+
+  function renderInput(body, q, A, o) {
+    const ro = o.readOnly ? 'disabled' : '';
+    const set = (v, rerender) => { A[q.id] = v; saveProgress(); if (rerender) renderInput(body, q, A, o); };
+    const token = o.token; const autoNext = () => { if (!q.status && !o.readOnly) setTimeout(() => { if (o.token === token && o.next) o.next(); }, 220); };
+    let h = '';
+    switch (q.type) {
+      case 'info': h = ''; break;
+      case 'cards': {
+        h = `<div class="opts cards">${spec.cards.map((c, n) => `<button class="opt" data-v="${esc(c.id)}" aria-pressed="${A[q.id] === c.id}" ${ro}><span class="num">Card ${n + 1}</span><span class="t">${esc(c.title)}</span><span class="d">${esc(c.covers)}</span><span class="ex">e.g. ${esc(c.example)}</span></button>`).join('')}</div>
+          ${q.none_option ? `<div class="opts"><button class="opt" data-v="none" aria-pressed="${A[q.id] === 'none'}" ${ro}><span class="t">${esc(q.none_option)}</span></button></div>` : ''}`;
+        break;
+      }
+      case 'single': case 'abtie': {
+        const opts = q.type === 'abtie' ? [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'tie', label: 'Tie' }] : q.options;
+        h = `<div class="opts" ${q.type === 'abtie' ? 'style="grid-template-columns:repeat(3,1fr)"' : ''}>${opts.map(op => `<button class="opt" data-v="${esc(op.value)}" aria-pressed="${A[q.id] === op.value}" ${ro}><span class="t">${esc(op.label)}</span></button>`).join('')}</div>`;
+        break;
+      }
+      case 'multi': {
+        const cur = A[q.id] || [];
+        h = `<div class="opts">${q.options.map(op => `<button class="opt" data-m="${esc(op.value)}" aria-pressed="${cur.includes(op.value)}" ${ro}><span class="t">${esc(op.label)}</span></button>`).join('')}</div><p class="small muted">Pick all that apply.</p>`;
+        break;
+      }
+      case 'confirm': h = `<div class="opts"><button class="opt" data-v="yes" aria-pressed="${A[q.id] === 'yes'}" ${ro}><span class="t">${esc(q.confirm || 'Yes')}</span></button></div>`; break;
+      case 'text': h = `<input id="in" type="text" value="${esc(A[q.id] || '')}" ${ro}>`; break;
+      case 'number': h = `<input id="in" type="number" min="0" step="1" style="max-width:160px" value="${esc(A[q.id] ?? '')}" ${ro}>`; break;
+      case 'timezone': {
+        if (!A[q.id]) A[q.id] = (S.session && S.session.time_zone) || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        h = `<input id="in" type="text" value="${esc(A[q.id])}" ${ro}><p class="small muted">An IANA name, like America/New_York. Filled in from this computer.</p>`;
+        break;
+      }
+      case 'long': h = `<textarea id="in" ${ro} placeholder="Type, or press Speak and talk">${esc(A[q.id] || '')}</textarea>${o.readOnly ? '' : voiceHTML()}`; break;
+      case 'scale7': {
+        const v = A[q.id];
+        h = `<div class="scale">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button data-v="${n}" aria-pressed="${v === n}" ${ro}>${n}</button>`).join('')}</div>
+          <div class="scale-ends"><span>1 · ${esc(q.low)}</span>${q.mid ? `<span>4 · ${esc(q.mid)}</span>` : '<span>4 · midpoint</span>'}<span>7 · ${esc(q.high)}</span></div>
+          <div class="chips" style="margin-top:10px"><button class="chip" data-v="unable_to_judge" aria-pressed="${v === 'unable_to_judge'}" ${ro}>Unable to judge</button></div>`;
+        break;
+      }
+      case 'people': {
+        const rows = A[q.id] && A[q.id].length ? A[q.id] : [{ alias: '', role: 'essential', confirmed: false, relation: '' }];
+        A[q.id] = rows;
+        h = `<table class="grid"><thead><tr><th>Initials or alias</th><th>Role</th><th>Confirmed?</th><th>How they know you / each other</th><th></th></tr></thead><tbody>
+          ${rows.map((p, n) => `<tr data-row="${n}"><td><input data-p="alias" value="${esc(p.alias)}" placeholder="e.g. JL" ${ro}></td>
+            <td><select data-p="role" ${ro}>${['essential', 'tentative', 'left_out'].map(r => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${{ essential: 'Essential', tentative: 'Tentative', left_out: 'Leave out' }[r]}</option>`).join('')}</select></td>
+            <td><select data-p="confirmed" ${ro}><option value="no" ${!p.confirmed ? 'selected' : ''}>Still to ask</option><option value="yes" ${p.confirmed ? 'selected' : ''}>Confirmed</option></select></td>
+            <td><input data-p="relation" value="${esc(p.relation)}" placeholder="e.g. college roommate" ${ro}></td>
+            <td>${o.readOnly ? '' : `<button class="btn small" data-del="${n}" title="Remove">✕</button>`}</td></tr>`).join('')}
+          </tbody></table>${o.readOnly ? '' : '<div class="row" style="margin-top:8px"><button class="btn small" id="add-row">Add a person</button></div>'}`;
+        break;
+      }
+      case 'budget': {
+        const b = A[q.id] || (A[q.id] = { amount_low: '', amount_high: '', per: '', firm_limit: null, currency: 'USD', note: '' });
+        h = `<div class="budget">
+          <label>From<input data-b="amount_low" type="number" min="0" value="${esc(b.amount_low)}" ${ro}></label>
+          <label>To<input data-b="amount_high" type="number" min="0" value="${esc(b.amount_high)}" ${ro}></label>
+          <label>Per<select data-b="per" ${ro}><option value="">Choose…</option><option value="person" ${b.per === 'person' ? 'selected' : ''}>Per person</option><option value="group" ${b.per === 'group' ? 'selected' : ''}>For the whole group</option></select></label>
+          <label>Currency<input data-b="currency" value="${esc(b.currency || 'USD')}" ${ro}></label>
+        </div>
+        <div class="row" style="margin-top:12px"><label class="row" style="gap:6px"><input type="checkbox" id="b-firm" ${b.firm_limit != null ? 'checked' : ''} ${ro} style="width:auto"> There’s a firm limit</label>
+          <input data-b="firm_limit" type="number" min="0" placeholder="Limit" style="max-width:140px" value="${esc(b.firm_limit ?? '')}" ${b.firm_limit == null ? 'hidden' : ''} ${ro}></div>
+        <label class="small muted" style="display:grid;gap:4px;margin-top:12px">Anything else about the budget (optional)<input data-b="note" value="${esc(b.note || '')}" ${ro}></label>`;
+        break;
+      }
+      case 'pick_field': {
+        const opts = (spec.fields || []).filter(f => fieldAnswer(f.id) && ['firm', 'preference'].includes(fieldStatus(f.id)));
+        h = opts.length ? `<div class="opts">${opts.map(f => `<button class="opt" data-v="${esc(f.id)}" aria-pressed="${A[q.id] === f.id}" ${ro}><span><span class="t">${esc(f.label.split(':')[0])}</span> <span class="tag ${fieldStatus(f.id)}">${esc(fieldStatus(f.id))}</span><br><span class="d">${esc(fieldAnswer(f.id).slice(0, 140))}</span></span></button>`).join('')}</div>`
+          : '<p class="muted">Nothing marked as firm or a preference yet. Skip this one.</p>';
+        break;
+      }
+      case 'readback': h = cardViewHTML(!o.readOnly); break;
+      case 'sources': {
+        const rows = A[q.id] && A[q.id].length ? A[q.id] : [{ agent: '', field: '', detail: '', source: 'earlier_chat', access_verified: 'no' }];
+        A[q.id] = rows;
+        const ags = (S.session.agents || []);
+        h = `<table class="grid"><thead><tr><th>Detail</th><th>Card field</th><th>Agent</th><th>From</th><th>Access verified?</th><th></th></tr></thead><tbody>
+          ${rows.map((r, n) => `<tr data-row="${n}"><td><input data-s="detail" value="${esc(r.detail)}" ${ro}></td>
+            <td><select data-s="field" ${ro}><option value="">—</option>${spec.fields.map(f => `<option value="${f.id}" ${r.field === f.id ? 'selected' : ''}>${esc(f.label.split(':')[0])}</option>`).join('')}</select></td>
+            <td><select data-s="agent" ${ro}><option value="">Either</option>${ags.map(a => `<option ${r.agent === a ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></td>
+            <td><select data-s="source" ${ro}>${['earlier_chat', 'email', 'calendar', 'contacts', 'other'].map(x => `<option value="${x}" ${r.source === x ? 'selected' : ''}>${x.replace('_', ' ')}</option>`).join('')}</select></td>
+            <td><select data-s="access_verified" ${ro}><option value="no" ${r.access_verified !== 'yes' ? 'selected' : ''}>No</option><option value="yes" ${r.access_verified === 'yes' ? 'selected' : ''}>Yes</option></select></td>
+            <td>${o.readOnly ? '' : `<button class="btn small" data-del="${n}">✕</button>`}</td></tr>`).join('')}</tbody></table>
+          ${o.readOnly ? '' : '<div class="row" style="margin-top:8px"><button class="btn small" id="add-row">Add a detail</button></div>'}`;
+        break;
+      }
+      case 'handoffs': h = handoffsHTML(); break;
+      case 'lock': h = lockHTML(); break;
+    }
+    // How firm, and an acceptable alternative
+    if (q.status) {
+      const st = A[q.id + '__status'] || '';
+      h += `<div class="statusbox"><div class="lbl">How firm is this?</div><div class="chips">${[['firm', 'Firm requirement'], ['preference', 'Preference'], ['open', 'Still open'], ['no_preference', 'No preference'], ['dont_know', 'Don’t know']].map(([v, l]) => `<button class="chip" data-st="${v}" aria-pressed="${st === v}" ${ro}>${l}</button>`).join('')}</div>
+        ${['firm', 'preference'].includes(st) ? `<div style="margin-top:10px"><div class="lbl">An acceptable alternative, and why it would work (optional)</div><input data-alt value="${esc(A[q.id + '__alt'] || '')}" ${ro}></div>` : ''}</div>`;
+    }
+    // The probe, once, for a thin answer
+    if (q.probe && A[q.id + '__probed']) {
+      h += `<div class="probe"><div class="lbl">A little more, please</div><p style="margin:4px 0 8px">${esc(q.probe.text)}</p><textarea id="probe-in" style="min-height:80px" ${ro}>${esc(A[q.id + '__probe'] || '')}</textarea>${o.readOnly ? '' : voiceHTML('probe')}</div>`;
+    }
+    body.innerHTML = h;
+
+    // Wire it
+    body.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
+      let v = b.dataset.v; if (q.type === 'scale7' && v !== 'unable_to_judge') v = +v;
+      set(v, true); autoNext();
+    });
+    body.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+      const cur = new Set(A[q.id] || []); const v = b.dataset.m;
+      if (v === 'none') { set(cur.has('none') ? [] : ['none'], true); return; }
+      cur.delete('none'); cur.has(v) ? cur.delete(v) : cur.add(v); set([...cur], true);
+    });
+    const inp = body.querySelector('#in');
+    if (inp) inp.oninput = () => { A[q.id] = q.type === 'number' ? (inp.value === '' ? null : +inp.value) : inp.value; A[q.id + '__input'] = A[q.id + '__input'] || 'typed'; saveProgress(); };
+    if (inp && q.type === 'text') inp.onkeydown = e => { if (e.key === 'Enter') o.next && o.next(); };
+    const pin = body.querySelector('#probe-in');
+    if (pin) pin.oninput = () => { A[q.id + '__probe'] = pin.value; saveProgress(); };
+    body.querySelectorAll('.mic').forEach(btn => btn.onclick = () => {
+      const target = btn.dataset.target === 'probe' ? pin : inp;
+      toggleMic(btn, target, `${o.audioPrefix}-${q.id}${btn.dataset.target === 'probe' ? '-probe' : ''}`, path => {
+        const k = q.id + (btn.dataset.target === 'probe' ? '__probe' : '') + '__audio';
+        A[k] = [...(A[k] || []), path]; A[q.id + '__input'] = 'voice'; saveProgress();
+      });
+    });
+    body.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { A[q.id + '__status'] = A[q.id + '__status'] === b.dataset.st ? '' : b.dataset.st; saveProgress(); renderInput(body, q, A, o); });
+    const alt = body.querySelector('[data-alt]');
+    if (alt) alt.oninput = () => { A[q.id + '__alt'] = alt.value; saveProgress(); };
+    // Tables
+    body.querySelectorAll('tr[data-row]').forEach(tr => {
+      const n = +tr.dataset.row;
+      tr.querySelectorAll('[data-p]').forEach(el => el.oninput = el.onchange = () => { const k = el.dataset.p; A[q.id][n][k] = k === 'confirmed' ? el.value === 'yes' : el.value; saveProgress(); });
+      tr.querySelectorAll('[data-s]').forEach(el => el.oninput = el.onchange = () => { A[q.id][n][el.dataset.s] = el.value; saveProgress(); });
+    });
+    body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { A[q.id].splice(+b.dataset.del, 1); set(A[q.id], true); });
+    const add = body.querySelector('#add-row');
+    if (add) add.onclick = () => { A[q.id].push(q.type === 'people' ? { alias: '', role: 'essential', confirmed: false, relation: '' } : { agent: '', field: '', detail: '', source: 'earlier_chat', access_verified: 'no' }); set(A[q.id], true); };
+    // Budget
+    body.querySelectorAll('[data-b]').forEach(el => el.oninput = el.onchange = () => { const k = el.dataset.b; A[q.id][k] = ['amount_low', 'amount_high', 'firm_limit'].includes(k) ? (el.value === '' ? (k === 'firm_limit' ? null : '') : +el.value) : el.value; saveProgress(); });
+    const firm = body.querySelector('#b-firm');
+    if (firm) firm.onchange = () => { A[q.id].firm_limit = firm.checked ? (A[q.id].firm_limit ?? '') : null; set(A[q.id], true); };
+    // Read-back edits
+    body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editField(b.dataset.edit, body, q, A, o));
+    const lockBtn = body.querySelector('#lock-btn');
+    if (lockBtn) lockBtn.onclick = lockCard;
+  }
+
+  // MARK: Voice: dictation into the box, and the recording itself, saved with the answer
+
+  let rec = null;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function voiceHTML(target = '') {
+    const can = SR || (navigator.mediaDevices && window.MediaRecorder);
+    if (!can) return '<div class="voice"><span class="note">Voice input isn’t available in this browser. Chrome or Safari support it.</span></div>';
+    return `<div class="voice"><button type="button" class="mic" data-target="${target}"><span class="dot"></span><span class="mlbl">Speak</span></button>
+      <span class="note">${SR ? 'Your words appear in the box as you talk; edit them after. ' : 'This browser can’t transcribe, but the recording is saved. '}The recording is saved with your answer.</span></div>`;
+  }
+  function stopMic() {
+    if (!rec) return;
+    const r = rec; rec = null; r.keep = false;
+    try { r.sr && r.sr.stop(); } catch (e) {}
+    try { r.mr && r.mr.state !== 'inactive' && r.mr.stop(); } catch (e) {}
+    if (r.btn) { r.btn.classList.remove('on'); r.btn.querySelector('.mlbl').textContent = 'Speak'; }
+  }
+  function toggleMic(btn, ta, name, onSaved) {
+    if (rec) { const same = rec.btn === btn; stopMic(); if (same) return; }
+    if (!ta) return;
+    const r = rec = { btn, ta, base: ta.value, finalText: '', keep: true, chunks: [] };
+    btn.classList.add('on'); btn.querySelector('.mlbl').textContent = 'Stop';
+    const note = btn.parentElement.querySelector('.note');
+    if (SR) {
+      const sr = new SR(); r.sr = sr;
+      sr.continuous = true; sr.interimResults = true; sr.lang = navigator.language || 'en-US';
+      sr.onresult = e => {
+        let interim = '';
+        for (let k = e.resultIndex; k < e.results.length; k++) { const x = e.results[k]; if (x.isFinal) r.finalText += x[0].transcript + ' '; else interim += x[0].transcript; }
+        ta.value = (r.base ? r.base.replace(/\s*$/, ' ') : '') + (r.finalText + interim).replace(/^\s+/, '');
+        ta.dispatchEvent(new Event('input'));
+      };
+      sr.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { note.textContent = 'The microphone was blocked. Allow it in the address bar, then try again.'; stopMic(); } };
+      sr.onend = () => { if (r.keep) { try { sr.start(); } catch (e) {} } };  // Chrome stops after a pause; keep going until Stop
+      try { sr.start(); } catch (e) {}
+    }
+    if (navigator.mediaDevices && window.MediaRecorder) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        if (!r.keep) { stream.getTracks().forEach(t => t.stop()); return; }
+        const mr = new MediaRecorder(stream); r.mr = mr;
+        mr.ondataavailable = e => e.data && e.data.size && r.chunks.push(e.data);
+        mr.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(r.chunks, { type: mr.mimeType || 'audio/webm' });
+          if (!blob.size) return;
+          uploadAudio(blob, name).then(path => { if (path) { onSaved(path); note.textContent = 'Recording saved.'; } })
+            .catch(e => { note.textContent = `The recording couldn’t be saved: ${e.message}. The text is kept.`; });
+        };
+        mr.start(1000);
+      }).catch(() => { if (!SR) { note.textContent = 'The microphone was blocked. Allow it in the address bar, then try again.'; stopMic(); } });
+    }
+  }
+  function uploadAudio(blob, name) {
+    if (!ONLINE) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => api('/api/study/audio', { pid: S.pid, name: name.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80), mime: blob.type, b64: String(fr.result).split(',')[1] })
+        .then(r => resolve(r.saved.path), reject);
+      fr.onerror = () => reject(new Error('couldn’t read the recording'));
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  // MARK: Pre-task interview
+
+  function renderPre(m, stepId) {
+    const st = spec.pre.find(s => s.id === stepId);
+    const times = S.session.interview_times = S.session.interview_times || {};
+    if (!times[stepId] && !S.pre.locked_at) times[stepId] = { start: nowIso(), end: null };
+    if (S.pre.locked_at) return renderLockedPre(m, st);
+    renderQuestions(m, {
+      scope: 'pre:' + stepId, kicker: `Pre-task interview · ${st.title}`, intro: st.intro, minutes: st.minutes,
+      list: st.questions, A: S.pre.answers, X: () => ({ ...preCtx(), openDecisions: openDecisions() }), audioPrefix: 'pre',
+      onDone: () => { times[stepId].end = nowIso(); saveSession(); saveInterview(); completeStage('pre:' + stepId); },
+    });
+  }
+  function renderLockedPre(m, st) {
+    const A = S.pre.answers, X = preCtx();
+    const qs = st.questions.filter(q => cond(q.when, A, X) && !['lock', 'readback', 'info'].includes(q.type));
+    m.innerHTML = `<div class="panel"><div class="kicker">Pre-task interview · ${esc(st.title)}</div><h2>Locked ${esc(clock(S.pre.locked_at))}</h2>
+      <p class="help">The card is locked, so these answers can’t change here. Record a later change from “Reread your card” or the chat’s card panel, and it goes to the change log.</p>
+      <div class="cardview">${qs.map(q => `<div class="f"><div class="k">${esc(qText(q, A, X))}</div><div class="v">${esc(fmt(q, A[q.id]) || (A[q.id + '__status'] === 'dont_know' ? 'Don’t know' : '—'))}${A[q.id + '__probe'] ? `\n↳ ${esc(A[q.id + '__probe'])}` : ''}</div><div></div></div>`).join('')}</div>
+      <div class="nav"><span class="spacer"></span><button class="btn primary" id="nx">Next</button></div></div>`;
+    $('nx').onclick = () => completeStage('pre:' + st.id);
+  }
+
+  function cardViewHTML(editable, card) {
+    const rows = (spec.fields || []).map(f => {
+      const answer = card ? card.fields[f.id].answer : fieldAnswer(f.id);
+      const status = card ? card.fields[f.id].status : fieldStatus(f.id);
+      return `<div class="f"><div class="k">${esc(f.label)}</div><div class="v">${esc(answer || '—')}</div><div class="row" style="gap:6px"><span class="tag ${status}">${esc(status.replace('_', ' '))}</span>${editable ? `<button class="btn small" data-edit="${f.id}">${card ? 'Change' : 'Fix'}</button>` : ''}</div></div>`;
+    }).join('');
+    const A = S.pre.answers, c = cardOf(card ? card.card : effectiveCard());
+    return `<div class="cardview">
+      <div class="f"><div class="k">Card</div><div class="v">${esc(c ? c.title : '—')}${A.card === 'none' ? ` (closest to: ${esc(A.none_kind || '')})` : ''}</div><div></div></div>
+      <div class="f"><div class="k">In your words</div><div class="v">${esc((card ? card.description : [A.description, A.description__probe].filter(Boolean).join('\n')) || '—')}</div><div></div></div>
+      ${rows}</div>`;
+  }
+  function editField(fid, body, q, A, o) {
+    const f = fieldOf(fid), locked = !!S.pre.locked_at;
+    const cur = locked ? S.card.fields[fid] : { answer: fieldAnswer(fid), status: fieldStatus(fid) };
+    const row = body.querySelector(`[data-edit="${fid}"]`).closest('.f');
+    row.innerHTML = `<div class="k">${esc(f.label)}</div><div><textarea id="ef" style="min-height:80px">${esc(cur.answer)}</textarea>
+      <div class="chips" id="ef-st">${['firm', 'preference', 'open', 'no_preference', 'dont_know'].map(v => `<button class="chip" data-v2="${v}" aria-pressed="${cur.status === v}">${v.replace('_', ' ')}</button>`).join('')}</div>
+      ${locked ? '<input id="ef-note" placeholder="Why it changed (optional)" style="margin-top:8px">' : ''}</div>
+      <div class="row" style="gap:6px"><button class="btn small primary" id="ef-ok">Save</button><button class="btn small" id="ef-x">Cancel</button></div>`;
+    let status = cur.status;
+    row.querySelectorAll('[data-v2]').forEach(b => b.onclick = () => { status = b.dataset.v2; row.querySelectorAll('[data-v2]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); });
+    row.querySelector('#ef-x').onclick = () => o ? renderInput(body, q, A, o) : render();
+    row.querySelector('#ef-ok').onclick = () => {
+      const answer = row.querySelector('#ef').value;
+      if (locked) {
+        const before = { ...S.card.fields[fid] };
+        S.card.fields[fid] = { ...S.card.fields[fid], answer, status };
+        const origin = (S.stage || '').startsWith('chat:') ? `day${S.day}_chat` : 'other';
+        saveFile('scenario/changes.jsonl', { append: [{ field: fid, before: { answer: before.answer, status: before.status }, after: { answer, status }, origin, note: (row.querySelector('#ef-note') || {}).value || '' }] });
+        saveProgress(); render();
+      } else {
+        A.__override = { ...(A.__override || {}), [fid]: { answer, status, at: nowIso() } };
+        saveProgress(); renderInput(body, q, A, o);
+      }
+    };
+  }
+
+  function flagsNow() {
+    const flags = new Set((S.session.flags || []).filter(f => !['dont_know_3_plus', 'short_description'].includes(f)));
+    const dk = (spec.fields || []).filter(f => f.factor && fieldStatus(f.id) === 'dont_know').length;
+    if (dk >= 3) flags.add('dont_know_3_plus');
+    const desc = [S.pre.answers.description, S.pre.answers.description__probe].filter(Boolean).join(' ');
+    if (words(desc) < 8) flags.add('short_description');
+    return [...flags];
+  }
+  function lockHTML() {
+    const flags = flagsNow(), dk = (spec.fields || []).filter(f => f.factor && fieldStatus(f.id) === 'dont_know');
+    return `${dk.length ? `<p class="banner">${dk.length} of the seven factors are “don’t know”: ${esc(dk.map(f => f.label.split(':')[0]).join(', '))}. ${dk.length >= 3 ? 'That will be flagged. ' : ''}They stay “don’t know” with every agent. Go back to answer them if you can.</p>` : '<p class="banner ok">Every factor has an answer.</p>'}
+      ${flags.includes('short_description') ? '<p class="banner">Your description of the gathering is under one sentence. That will be flagged.</p>' : ''}
+      <div class="nav"><button class="btn primary" id="lock-btn">Lock my card</button></div>`;
+  }
+
+  function buildCard() {
+    const A = S.pre.answers, X = preCtx(), card = effectiveCard();
+    const fields = {};
+    const sources = (A.sources_any === 'yes' || A.sources_any === 'not_sure') ? (A.sources || []).filter(s => s.detail) : [];
+    for (const f of spec.fields) {
+      fields[f.id] = { answer: fieldAnswer(f.id), status: fieldStatus(f.id), alternative: fieldAlternative(f.id), given_in_opening: false,
+        agent_sources: sources.filter(s => s.field === f.id).map(s => ({ agent: s.agent || 'either', source: s.source, access_verified: s.access_verified === 'yes', detail: s.detail })) };
+    }
+    const unplaced = sources.filter(s => !s.field);
+    if (unplaced.length) fields.card_details.agent_sources.push(...unplaced.map(s => ({ agent: s.agent || 'either', source: s.source, access_verified: s.access_verified === 'yes', detail: s.detail })));
+    fields.guests.people = (A.guests || []).filter(p => p.alias).map(p => ({ alias: p.alias, role: p.role, confirmed: !!p.confirmed, relation: p.relation || '' }));
+    const b = A.budget || {};
+    Object.assign(fields.budget, { amount_low: b.amount_low === '' ? null : b.amount_low ?? null, amount_high: b.amount_high === '' ? null : b.amount_high ?? null, per: b.per || null, firm_limit: b.firm_limit === '' ? null : b.firm_limit ?? null, currency: b.currency || 'USD' });
+    fields.card_details.answers = Object.fromEntries(visiblePre('cardq').filter(q => q.field === 'card_details' && filled(A[q.id])).map(q => [qText(q, A, X), fmt(q, A[q.id])]));
+    const tradeoffs = [];
+    if (A.top_pref) {
+      if (filled(A.tradeoff_give_up) && X.topStatus === 'firm') tradeoffs.push({ preference: X.top_pref_label, question: 'give_up', answer: A.tradeoff_give_up });
+      if (filled(A.tradeoff_place_without) && X.topStatus !== 'firm') tradeoffs.push({ preference: X.top_pref_label, question: 'place_without', answer: A.tradeoff_place_without });
+    }
+    return {
+      card, card_none_kind: A.card === 'none' ? A.none_kind || null : null,
+      description: [A.description, A.description__probe].filter(Boolean).join('\n'),
+      dates: A.timing || null, time_zone: A.time_zone || S.session.time_zone, locked_at: null,
+      fields, priorities: A.priorities || '', boundaries: A.boundaries || '', tradeoffs,
+      corrections: A.corrections || '', overrides_at_readback: A.__override || {},
+    };
+  }
+
+  function interviewMarkdown() {
+    const A = S.pre.answers, X = preCtx();
+    const lines = [`# ${spec.title || spec.task}: pre-task interview, ${S.pid}`, '', `Mode: self-administered on the study console. Time zone: ${A.time_zone || S.session.time_zone}.` + (S.pre.locked_at ? ` Locked ${S.pre.locked_at}.` : ' Not locked yet.'), ''];
+    for (const st of spec.pre) {
+      const t = (S.session.interview_times || {})[st.id] || {};
+      lines.push(`## ${st.title}`, '', `_${t.start || '?'} – ${t.end || '?'}_`, '');
+      for (const q of st.questions.filter(q => cond(q.when, A, X))) {
+        if (['lock', 'info'].includes(q.type)) continue;
+        if (q.type === 'readback') {
+          const ov = A.__override || {};
+          lines.push(`**Read back.** ${Object.keys(ov).length ? 'Fixed at read-back: ' + Object.entries(ov).map(([k, v]) => `${k} → “${v.answer}” (${v.status})`).join('; ') : 'No fixes.'}`, '');
+          continue;
+        }
+        const v = fmt(q, A[q.id]), st2 = A[q.id + '__status'];
+        lines.push(`**Q:** ${qText(q, A, X)}`, '', `**A:** ${v || (st2 === 'dont_know' ? '_Don’t know_' : A[q.id + '__skipped'] ? '_Skipped_' : '_No answer_')}` +
+          (st2 ? ` _(${st2.replace('_', ' ')})_` : '') + (A[q.id + '__alt'] ? `  \nAlternative: ${A[q.id + '__alt']}` : '') +
+          (A[q.id + '__input'] === 'voice' ? `  \n_Spoken${(A[q.id + '__audio'] || []).length ? '; recording: ' + A[q.id + '__audio'].join(', ') : ''}_` : ''), '');
+        if (q.probe && A[q.id + '__probed']) lines.push(`**Probe:** ${q.probe.text}`, '', `**A:** ${A[q.id + '__probe'] || '_No answer_'}`, '');
+      }
+    }
+    return lines.join('\n') + '\n';
+  }
+  function saveInterview() {
+    saveFile('scenario/interview.json', { data: { answers: S.pre.answers, path: visiblePre().map(q => q.id), saved_at: nowIso() } });
+    saveFile('scenario/interview.md', { text: interviewMarkdown() });
+  }
+
+  async function lockCard() {
+    const card = buildCard();
+    card.locked_at = nowIso();
+    S.card = card; S.pre.locked_at = card.locked_at;
+    const A = S.pre.answers;
+    Object.assign(S.session, {
+      time_zone: A.time_zone || S.session.time_zone, flags: flagsNow(), calendar_shared: A.calendar_shared === 'yes' ? true : A.calendar_shared === 'no' ? false : null,
+      context: { calendar_events_next_two_weeks: A.ctx_calendar ?? null, guests_in_connected_accounts: A.ctx_guests_connected ?? null, agent_use_before: A.ctx_agent_use || '' },
+    });
+    (S.session.interview_times.lock || (S.session.interview_times.lock = {})).end = nowIso();
+    await Promise.all([saveFile('scenario/card.json', { data: card }), saveSession()]);
+    saveInterview();
+    saveProgress(true);
+    completeStage('pre:lock');
+  }
+
+  function renderReread(m) {
+    m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day} · Pre-task</div><h2>Reread your private card</h2>
+      <p class="help">Day 2 uses the same gathering, opening, handoff and time limit. If something has really changed since day 1, record it here; the change goes to the log beside the locked card.</p>
+      <div id="cv">${cardViewHTML(true, S.card)}</div>
+      <div class="nav"><span class="spacer"></span><button class="btn primary" id="nx">I’ve reread it</button></div></div>`;
+    m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editField(b.dataset.edit, m));
+    $('nx').onclick = () => completeStage('reread');
+  }
+
+  // MARK: The chat with an agent
+
+  function chatOf(agent) {
+    const d = D();
+    return (d.chats[agent] = d.chats[agent] || { sent: [], events: [], manual: [], rounds: 0, opening_sent_at: null, first_recommendation: null, ready_first: null, handoff: null, learned_before_handoff: '', finished: false });
+  }
+  const jobById = id => jobs.find(j => j.id === id);
+  function manualEntry(C, text) { const last = C.sent[C.sent.length - 1]; return { text, at: nowIso(), step: last ? last.step : null, round: last ? last.round ?? null : null }; }
+  function sentAt(e) { const j = jobById(e.job); return e.sent_at || (j && (j.sent_at || j.started_at)) || null; }
+  function compose(kind) {
+    const c = cardOf(S.card.card), t = spec.messages[kind];
+    return t.replace('{first}', c.first).replace('{last}', c.last);
+  }
+
+  async function sendToAgent(agent, text, step, extra = {}) {
+    const C = chatOf(agent);
+    const entry = { job: null, step, text, created_at: nowIso(), sent_at: null, ...extra };
+    if (ONLINE) {
+      const r = await api('/api/send', { agents: [agent], text, mode: 'run', task: S.task, step });
+      entry.job = r.jobs[0].id;
+      jobs.push(r.jobs[0]);
+    } else entry.sent_at = entry.created_at;
+    C.sent.push(entry);
+    saveProgress();
+    return entry;
+  }
+
+  function agentMessages(agent, since) {
+    const channel = (agentsAvail.find(x => x.name === agent) || {}).channel;  // an agent that moved channels has one conversation per channel
+    const all = snap ? (snap.agents || []).filter(x => x.name === agent) : [];
+    const a = all.find(x => x.channel === channel) || all[0];
+    if (!a || !since) return [];
+    const t0 = new Date(since).getTime() - 5000;
+    return a.items.filter(i => i.type === 'message' && !i.from_me && !i.service && i.text && new Date(i.date).getTime() >= t0)
+      .map(i => ({ role: 'agent', text: i.text, at: i.date, id: i.id, attachments: i.attachments || [] }));
+  }
+  // The conversation as it happened: what was sent (from the console's jobs), the agent's recorded replies, and any pasted by hand.
+  function transcript(agent) {
+    const C = chatOf(agent);
+    const first = C.sent[0];
+    const since = first ? first.created_at : null;
+    const pending = new Date(Date.now() + clockOffset + 864e5).toISOString();  // not out yet: shown last
+    const mine = C.sent.map(e => { const j = jobById(e.job); const unsent = e.job && !sentAt(e) && (!j || ['queued', 'running'].includes(j.state)); return { role: 'participant', text: e.text, at: sentAt(e) || (unsent ? pending : e.created_at), step: e.step, round: e.round ?? null, job: e.job, unsent }; });
+    const theirs = agentMessages(agent, since).concat((C.manual || []).map(x => ({ role: 'agent', text: x.text, at: x.at, manual: true, fixedStep: x.step, fixedRound: x.round })));
+    const all = mine.concat(theirs).sort((x, y) => new Date(x.at) - new Date(y.at));
+    let step = null, round = null;
+    for (const x of all) { if (x.role === 'participant') { step = x.step; round = x.round; } else if (x.fixedStep !== undefined) { x.step = x.fixedStep; x.round = x.fixedRound; } else { x.step = step; x.round = round; } }
+    return all;
+  }
+  const minutesSince = (from, to) => from ? Math.round(((to ? new Date(to).getTime() : Date.now() + clockOffset) - new Date(from).getTime()) / 6000) / 10 : null;
+
+  function renderChat(m, pos) {
+    const agent = order()[pos - 1], L = labelOf(agent), C = chatOf(agent), lim = spec.limits;
+    ensurePolling();
+    m.innerHTML = `<div class="chatgrid">
+      <div class="panel chatpane">
+        <div class="chathead"><div><div class="kicker" style="margin:0">Day ${S.day} · chat ${pos} of ${order().length}</div><strong>Agent ${L}</strong> <span class="small muted">(${esc(agent)})</span></div>
+          <span class="spacer"></span><span class="turns" id="turns"></span><span class="timer" id="timer">--:--</span></div>
+        <div class="msgs" id="msgs"></div>
+        <div class="compose" id="compose"></div>
+      </div>
+      <div class="side">
+        <div class="panel"><h3>Chat rules</h3><ul>${spec.chat_rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>
+        <div class="panel"><h3>Your private card</h3><details><summary>Show the card</summary><div id="cv" style="margin-top:8px;font-size:13px">${cardViewHTML(true, S.card)}</div></details></div>
+        <div class="panel"><h3>Notes</h3>
+          <div class="row" style="gap:6px;margin-bottom:8px">
+            <button class="btn small" id="n-rec" ${C.first_recommendation ? 'disabled' : ''}>${C.first_recommendation ? `Restaurants named · round ${C.first_recommendation.round}` : 'It just named restaurants'}</button>
+            <button class="btn small" id="n-ready" ${C.ready_first ? 'disabled' : ''}>${C.ready_first ? `Ready first: ${C.ready_first.who}` : 'It says the plan is ready'}</button>
+          </div>
+          <div class="row" style="gap:6px"><select id="n-type" style="width:auto"><option value="asked">It asked</option><option value="volunteered">It volunteered</option><option value="corrected">I corrected</option><option value="changed">I changed my mind</option></select>
+            <input id="n-note" placeholder="What" style="flex:1;min-width:100px"><button class="btn small" id="n-add">Add</button></div>
+          <div class="small muted" id="n-list" style="margin-top:6px">${C.events.map(e => `R${e.round} ${e.type}: ${esc(e.note)}`).join('<br>')}</div>
+          <details style="margin-top:10px"><summary>The agent replied where the console can’t see it?</summary>
+            <textarea id="n-paste" style="min-height:70px;margin-top:6px" placeholder="Paste the agent’s reply here"></textarea><button class="btn small" id="n-paste-go" style="margin-top:6px">Add as the agent’s reply</button></details>
+        </div>
+      </div></div>`;
+    m.querySelectorAll('#cv [data-edit]').forEach(b => b.onclick = () => editField(b.dataset.edit, $('cv')));
+    $('n-rec').onclick = () => { C.first_recommendation = { round: C.rounds, at: nowIso() }; saveProgress(); renderChat(m, pos); };
+    $('n-ready').onclick = () => { C.ready_first = { who: 'agent', round: C.rounds, at: nowIso() }; saveProgress(); renderChat(m, pos); };
+    $('n-add').onclick = () => { const note = $('n-note').value.trim(); if (!note) return; C.events.push({ at: nowIso(), round: C.rounds, type: $('n-type').value, note }); saveProgress(); renderChat(m, pos); };
+    $('n-paste-go').onclick = () => { const t = $('n-paste').value.trim(); if (!t) return; C.manual.push(manualEntry(C, t)); saveProgress(); updateChat(pos); $('n-paste').value = ''; };
+    renderCompose(pos);
+    updateChat(pos);
+  }
+
+  function chatPhase(C) {
+    if (!C.sent.length) return 'opening';
+    if (C.finished) return 'finished';
+    if (C.handoff) return 'handoff';
+    return 'rounds';
+  }
+  function renderCompose(pos) {
+    const el = $('compose'); if (!el) return;
+    const agent = order()[pos - 1], C = chatOf(agent), lim = spec.limits, phase = chatPhase(C);
+    if (phase === 'opening') {
+      el.innerHTML = `<div class="small muted">The opening, the same for both agents on your card. The timer starts when it goes out.</div>
+        <div class="msg me" style="max-width:100%;align-self:stretch">${esc(compose('opening'))}</div>
+        <div class="row"><span class="spacer"></span><button class="btn primary" id="c-open">Send the opening</button></div><div class="err" id="c-err"></div>`;
+      $('c-open').onclick = async () => { $('c-open').disabled = true; try { await sendToAgent(agent, compose('opening'), stepName('OPENING'), { round: 0 }); renderCompose(pos); updateChat(pos); } catch (e) { $('c-err').textContent = e.message; $('c-open').disabled = false; } };
+      return;
+    }
+    if (phase === 'rounds') {
+      const left = lim.turns - C.rounds;
+      el.innerHTML = `<textarea id="c-text" placeholder="${left > 0 ? `Your reply (turn ${C.rounds + 1} of ${lim.turns})` : 'That was your last turn: send the handoff.'}" ${left > 0 ? '' : 'disabled'}></textarea>
+        <div class="row">${voiceHTML()}<span class="spacer"></span>
+          <button class="btn" id="c-send" ${left > 0 ? '' : 'disabled'}>Send reply</button>
+          <button class="btn primary" id="c-hand">Send the handoff</button></div>
+        <div class="err" id="c-err"></div>`;
+      const ta = $('c-text');
+      const k = `draft.${S.pid}.${S.day}.${agent}`; ta.value = local.get(k) || ''; ta.oninput = () => local.set(k, ta.value);
+      el.querySelector('.mic') && (el.querySelector('.mic').onclick = e => toggleMic(e.currentTarget, ta, `d${S.day}-${agent}-round${C.rounds + 1}`, () => {}));
+      const sendReply = async () => {
+        const t = ta.value.trim(); if (!t) return;
+        stopMic(); $('c-send').disabled = true;
+        try { C.rounds++; await sendToAgent(agent, t, stepName('ROUND', C.rounds), { round: C.rounds }); local.set(k, ''); renderCompose(pos); updateChat(pos); }
+        catch (e) { C.rounds--; $('c-err').textContent = e.message; $('c-send').disabled = false; }
+      };
+      $('c-send').onclick = sendReply;
+      ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(); };
+      $('c-hand').onclick = async () => {
+        const mins = minutesSince(openingAt(C));
+        const trigger = C.rounds >= lim.turns ? 'ten_turns' : mins >= lim.handoff_minute ? 'minute_25' : 'both_ready';
+        if (trigger === 'both_ready' && !confirm('Send the handoff now? Do this when you and the agent are both ready.')) return;
+        $('c-hand').disabled = true;
+        try {
+          if (!C.ready_first) C.ready_first = { who: 'participant', round: C.rounds, at: nowIso() };
+          const e = await sendToAgent(agent, compose('handoff'), stepName('HANDOFF'), { round: null });
+          C.handoff = { sent_at: null, job: e.job, trigger, reply_at: null, partial: false };
+          saveProgress(); renderCompose(pos); updateChat(pos);
+        } catch (e) { $('c-err').textContent = e.message; $('c-hand').disabled = false; }
+      };
+      return;
+    }
+    if (phase === 'handoff') {
+      el.innerHTML = `<div class="row"><span class="small muted" id="c-wait">Waiting for the agent’s complete plan…</span><span class="spacer"></span>
+        <button class="btn" id="c-partial" hidden>Use what’s there (30 minutes are up)</button>
+        <button class="btn primary" id="c-done" disabled>The plan is in: finish this chat</button></div>
+        <details><summary>What had the agent learned by the handoff? (optional note)</summary><textarea id="c-learned" style="min-height:70px;margin-top:6px">${esc(C.learned_before_handoff)}</textarea></details>
+        <div class="err" id="c-err"></div>`;
+      $('c-learned').oninput = e => { C.learned_before_handoff = e.target.value; saveProgress(); };
+      $('c-partial').onclick = () => { C.handoff.partial = true; finishChat(pos); };
+      $('c-done').onclick = () => finishChat(pos);
+      return;
+    }
+    el.innerHTML = `<div class="row"><span class="banner ok" style="margin:0">This chat is finished and saved.</span><span class="spacer"></span><button class="btn primary" id="c-next">Continue</button></div>`;
+    $('c-next').onclick = () => completeStage('chat:' + pos);
+  }
+  function openingAt(C) { return C.sent[0] ? sentAt(C.sent[0]) : null; }
+
+  function updateChat(pos) {
+    const box = $('msgs'); if (!box) return;
+    const agent = order()[pos - 1], C = chatOf(agent), lim = spec.limits;
+    const t = transcript(agent);
+    const opened = openingAt(C);
+    if (opened && !C.opening_sent_at) { C.opening_sent_at = opened; saveProgress(); }
+    let lastStep = null, out = '';
+    for (const x of t) {
+      if (x.role === 'participant' && x.step !== lastStep) { out += `<div class="stepmark">${esc(x.step)}</div>`; lastStep = x.step; }
+      const j = x.job && jobById(x.job);
+      const state = x.role === 'participant' && j ? (j.state === 'queued' ? ' · queued' : !j.sent_at && j.state === 'running' ? ' · sending…' : j.state === 'failed' ? ` · failed: ${esc(j.error || '')}` : '') : '';
+      out += `<div class="msg ${x.role === 'participant' ? 'me' : 'agent'}">${esc(x.text)}<span class="meta">${x.unsent ? '' : esc(clock(x.at))}${x.manual ? ' · pasted' : ''}${state}</span></div>`;
+    }
+    const agentJob = [...C.sent].reverse().map(e => jobById(e.job)).find(Boolean);
+    if (agentJob && agentJob.state === 'running' && agentJob.sent_at) out += `<div class="stepmark">Recording the agent’s reply until it’s quiet…</div>`;
+    if (!t.length) out = '<div class="muted small" style="margin:auto">Nothing yet. Send the opening to start.</div>';
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    if (box.dataset.k !== out) { box.innerHTML = out; box.dataset.k = out; if (atBottom || !box.dataset.once) box.scrollTop = box.scrollHeight; box.dataset.once = '1'; }
+    // Turns and timer, outside the chat
+    const mins = opened ? minutesSince(opened, C.handoff && C.handoff.reply_at && C.finished ? C.handoff.reply_at : null) : null;
+    const tm = $('timer');
+    if (tm) {
+      const endAt = C.finished && C.handoff && C.handoff.reply_at ? new Date(C.handoff.reply_at).getTime() : Date.now() + clockOffset;
+      const s = mins == null ? null : Math.max(0, Math.floor((endAt - new Date(opened).getTime()) / 1000));
+      tm.textContent = s == null ? '--:--' : `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      tm.className = 'timer' + (mins >= lim.total_minute ? ' bad' : mins >= lim.handoff_minute ? ' warn' : '');
+    }
+    $('turns') && ($('turns').textContent = `Turn ${C.rounds} of ${lim.turns}`);
+    const phase = chatPhase(C);
+    if (phase === 'rounds') {
+      const hand = $('c-hand');
+      const due = C.rounds >= lim.turns ? 'That was your 10th turn: send the handoff now.' : mins >= lim.handoff_minute ? `Minute ${lim.handoff_minute}: send the handoff now.` : '';
+      const err = $('c-err');
+      if (hand) hand.classList.toggle('danger', !!due);
+      if (err && due && !err.textContent) err.textContent = due;
+    }
+    if (phase === 'handoff' && C.handoff) {
+      const hj = jobById(C.handoff.job);
+      const replies = t.filter(x => x.role === 'agent' && x.step === stepName('HANDOFF'));
+      if (hj && hj.sent_at && !C.handoff.sent_at) C.handoff.sent_at = hj.sent_at;
+      if (!C.handoff.sent_at) { const e = C.sent.find(e => e.step === stepName('HANDOFF')); if (e) C.handoff.sent_at = sentAt(e); }
+      if (replies.length) C.handoff.reply_at = replies[replies.length - 1].at;
+      const done = $('c-done'), wait = $('c-wait'), part = $('c-partial');
+      const quiet = !hj || ['done', 'failed', 'stopped', 'cancelled'].includes(hj.state);
+      if (done) done.disabled = !replies.length;
+      if (wait) wait.textContent = !replies.length ? 'Waiting for the agent’s complete plan…' : quiet ? 'The agent has gone quiet. Check that the plan is complete, then finish.' : 'The agent is still replying…';
+      if (part) part.hidden = !(mins >= lim.total_minute && !quiet);
+    }
+  }
+
+  function conversationRecords(agent) {
+    const C = chatOf(agent), opened = openingAt(C), a = agentsAvail.find(x => x.name === agent) || {};
+    return transcript(agent).map((x, n) => ({
+      message_id: `${S.pid}-d${S.day}-${agent}-${String(n + 1).padStart(3, '0')}`, participant_id: S.pid, day: S.day, agent, channel: a.channel || null,
+      role: x.role, step: x.step, round: x.step && /HANDOFF|PROCESS/.test(x.step) ? null : x.round, sent_at: x.unsent ? null : localIso(x.at), minutes_from_opening: x.unsent ? null : minutesSince(opened, x.at),
+      text: x.text, attachments: (x.attachments || []).map(t => t.name || t.url || ''), links: [...new Set((x.text.match(/https?:\/\/[^\s)>\]]+/g) || []))], ...(x.manual ? { pasted: true } : {}),
+    }));
+  }
+  function saveConversation(agent) {
+    const recs = conversationRecords(agent), base = `day${S.day}/${agent}`;
+    const md = [`# Day ${S.day}: ${S.pid} with ${agent} (Agent ${labelOf(agent)})`, ''].concat(recs.map(r => `**${r.role === 'participant' ? 'Participant' : agent}** · ${r.step || ''} · ${r.sent_at || ''}${r.minutes_from_opening != null ? ` · minute ${r.minutes_from_opening}` : ''}\n\n${r.text}\n`)).join('\n');
+    return Promise.all([saveFile(`${base}/conversation.jsonl`, { text: recs.map(r => JSON.stringify(r)).join('\n') + '\n' }), saveFile(`${base}/conversation.md`, { text: md })]);
+  }
+  async function finishChat(pos) {
+    const agent = order()[pos - 1], C = chatOf(agent);
+    stopMic();
+    const t = transcript(agent);
+    C.handoff_text = t.filter(x => x.role === 'agent' && x.step === stepName('HANDOFF')).map(x => x.text).join('\n\n');
+    C.finished = true;
+    const he = C.sent.find(e => e.step === stepName('HANDOFF'));
+    if (C.handoff && he) C.handoff.sent_at = sentAt(he) || C.handoff.sent_at;
+    const notes = { opening_sent_at: localIso(openingAt(C)), events: C.events, first_recommendation: C.first_recommendation, ready_first: C.ready_first || { who: 'neither', round: C.rounds, at: null },
+      handoff: C.handoff ? { sent_at: localIso(C.handoff.sent_at), trigger: C.handoff.trigger, reply_at: localIso(C.handoff.reply_at), partial: !!C.handoff.partial } : null,
+      learned_before_handoff: C.learned_before_handoff, turns: C.rounds, recorded_by: 'participant' };
+    await Promise.all([saveConversation(agent), saveFile(`day${S.day}/${agent}/chat-notes.json`, { data: notes })]);
+    saveProgress(true);
+    completeStage('chat:' + pos);
+  }
+
+  // MARK: Polling the console (only while a chat or the process reports are open)
+
+  function ensurePolling() { if (!polling && ONLINE) { poll(); polling = setInterval(poll, POLL_MS); } }
+  function stopPollingUnlessNeeded() { if (polling && !/^(chat:|process)/.test(S.stage || '')) { clearInterval(polling); polling = null; } }
+  async function poll() {
+    try {
+      const st = await api('/api/state' + (snapVersion != null ? '?since=' + snapVersion : ''));
+      if (st.snapshot) snap = st.snapshot;
+      snapVersion = st.version; jobs = st.jobs || []; dryRun = st.dry_run;
+      clockOffset = new Date(st.now).getTime() - Date.now();
+      const key = S && S.stage || '';
+      if (key.startsWith('chat:')) updateChat(+key.slice(5));
+      if (key === 'process') updateProcess();
+    } catch (e) { /* the next poll may work */ }
+  }
+
+  // MARK: After each agent, comparison, extra questions
+
+  function ratingCtx(A) {
+    const names = { plan_satisfaction: 'plan', process_satisfaction: 'process', understood_me: 'understood you', host_voice: 'invitation voice', reuse: 'reuse' };
+    const low = Object.keys(names).filter(k => typeof A[k] === 'number' && A[k] <= 3).map(k => `${names[k]} ${A[k]}`);
+    const high = Object.keys(names).filter(k => typeof A[k] === 'number' && A[k] >= 6).map(k => `${names[k]} ${A[k]}`);
+    return { low_ratings: low.join(', '), high_ratings: high.join(', ') };
+  }
+  function renderAfter(m, pos) {
+    const agent = order()[pos - 1], d = D(), A = (d.after[agent] = d.after[agent] || {});
+    renderQuestions(m, {
+      scope: `d${S.day}:after:${agent}`, kicker: `Day ${S.day} · About Agent ${labelOf(agent)}`, list: spec.after_agent, A, audioPrefix: `d${S.day}-${agent}-after`,
+      X: () => ({ agent_label: labelOf(agent), openDecisions: openDecisions(), open_decisions: openDecisions().join(', '), ...ratingCtx(A) }), doneLabel: 'Save my answers',
+      onDone: async () => {
+        const out = {};
+        for (const q of spec.after_agent) if (!['info'].includes(q.type)) out[q.id] = cond(q.when, A, { openDecisions: openDecisions() }) ? (A[q.id] ?? null) : null;
+        delete out.pc_used;
+        out.personal_context_used = A.pc_used || null;
+        out.position = pos; out.answered_at = nowIso();
+        out.voice = Object.fromEntries(Object.keys(A).filter(k => k.endsWith('__audio')).map(k => [k.replace('__audio', ''), A[k]]));
+        if (Object.values(out).some(v => v === null || v === undefined) && ['plan_satisfaction', 'process_satisfaction', 'understood_me', 'host_voice', 'reuse'].some(k => out[k] == null)) {
+          S.session.flags = [...new Set([...(S.session.flags || []), 'skipped_ratings'])]; saveSession();
+        }
+        await saveFile(`day${S.day}/${agent}/after-agent.json`, { data: out });
+        completeStage('after:' + pos);
+      },
+    });
+  }
+  function handoffsHTML() {
+    const d = D(), get = l => { const a = agentOfLabel(l); return a ? (d.chats[a] || {}).handoff_text || '(No handoff reply was recorded.)' : ''; };
+    return `<div class="handoffs"><div class="h"><b>Handoff A</b>${esc(get('A'))}</div><div class="h"><b>Handoff B</b>${esc(get('B'))}</div></div>`;
+  }
+  function renderCompare(m) {
+    const A = D().comparison;
+    renderQuestions(m, {
+      scope: `d${S.day}:compare`, kicker: `Day ${S.day} · Comparison`, list: spec.comparison, A, audioPrefix: `d${S.day}-compare`, X: () => ({}), doneLabel: 'Save the comparison',
+      footer: () => S.cursor[`d${S.day}:compare`] && S.cursor[`d${S.day}:compare`] !== 'intro' ? `<div class="panel"><details open><summary>The two handoffs</summary>${handoffsHTML()}</details></div>` : '',
+      onDone: async () => {
+        const out = {};
+        for (const q of spec.comparison) if (q.type !== 'handoffs') out[q.id] = A[q.id] ?? null;
+        out.answered_at = nowIso();
+        out.blind_labels = (S.session.blind_labels || {})[String(S.day)];
+        await saveFile(`day${S.day}/comparison.json`, { data: out });
+        completeStage('compare');
+      },
+    });
+  }
+  function renderDay1(m) {
+    const A = D().wyd;
+    renderQuestions(m, {
+      scope: 'd1:wyd', kicker: 'Day 1 · What you would really do', list: spec.day1, A, audioPrefix: 'd1-wyd', X: () => ({}), doneLabel: 'Save',
+      onDone: async () => { await saveFile('day1/what-you-would-do.json', { data: { plan_differently: A.plan_differently || '', invite_differently: A.invite_differently || '', answered_at: nowIso() } }); completeStage('day1'); },
+    });
+  }
+  function renderLearn(m, pos) {
+    const agent = order()[pos - 1], d = D(), A = (d.learning[agent] = d.learning[agent] || {});
+    renderQuestions(m, {
+      scope: `d2:learn:${agent}`, kicker: `Day 2 · Learning check · Agent ${labelOf(agent)}`, list: spec.learning, A, audioPrefix: `d2-${agent}-learning`, X: () => ({ agent_label: labelOf(agent) }), doneLabel: 'Save',
+      onDone: async () => { await saveFile(`day2/${agent}/learning-check.json`, { data: { vs_day1: A.vs_day1 ?? null, remembered: A.remembered || '', repeated: A.repeated || '', answered_at: nowIso() } }); completeStage('learn:' + pos); },
+    });
+  }
+
+  // MARK: Process reports, each agent, end of the day
+
+  function renderProcess(m) {
+    ensurePolling();
+    const d = D();
+    m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day} · Process reports</div><h2>Ask each agent how it worked</h2>
+      <p class="help">Two prompts to each agent. The second goes once the first has a reply. Their answers are saved as the agent’s own account of what it did.</p>
+      <div id="proc"></div>
+      <div class="nav"><span class="spacer"></span><span class="err" id="p-err"></span><button class="btn primary" id="p-done" disabled>Save and finish the day</button></div></div>`;
+    $('p-done').onclick = async () => { await Promise.all(order().map(a => saveConversation(a))); saveProgress(true); completeStage('process'); };
+    updateProcess();
+  }
+  function updateProcess() {
+    const box = $('proc'); if (!box) return;
+    const d = D();
+    let allDone = true, html = '';
+    order().forEach(agent => {
+      const P = (d.process[agent] = d.process[agent] || { sent: [] });
+      const t = transcript(agent);
+      const reply = n => t.filter(x => x.role === 'agent' && x.step === stepName('PROCESS', n));
+      const entry = n => chatOf(agent).sent.find(e => e.step === stepName('PROCESS', n));
+      const quiet = e => { const j = e && jobById(e.job); return !e || !e.job || !j || ['done', 'failed', 'stopped', 'cancelled'].includes(j.state); };
+      const p1 = entry(1), p2 = entry(2), r1 = reply(1), r2 = reply(2);
+      const next = !p1 ? 1 : (!p2 && r1.length && quiet(p1)) ? 2 : null;
+      if (!(p2 && r2.length)) allDone = false;
+      html += `<div class="panel" style="box-shadow:none"><h3>Agent ${labelOf(agent)} <span class="small muted">(${esc(agent)})</span></h3>
+        ${[1, 2].map(n => { const e = entry(n), r = reply(n); return `<p class="small"><b>Prompt ${n}.</b> ${esc(spec.messages.process[n - 1])}</p>
+          ${e ? `<div class="small muted">${r.length ? `Reply recorded ${esc(clock(r[r.length - 1].at))}` : 'Waiting for the reply…'}</div>${r.length ? `<details><summary>Show the reply</summary><div style="white-space:pre-wrap;font-size:13px">${esc(r.map(x => x.text).join('\n\n'))}</div></details>` : ''}` : ''}`; }).join('')}
+        <div class="row" style="margin-top:8px">${next ? `<button class="btn primary small" data-proc="${esc(agent)}" data-n="${next}">Send prompt ${next}</button>` : ''}
+        <details><summary class="small">Paste a reply by hand</summary><textarea data-paste="${esc(agent)}" style="min-height:60px"></textarea><button class="btn small" data-paste-go="${esc(agent)}">Add</button></details></div></div>`;
+    });
+    if (box.dataset.k !== html) {
+      box.innerHTML = html; box.dataset.k = html;
+      box.querySelectorAll('[data-proc]').forEach(b => b.onclick = async () => {
+        b.disabled = true;
+        try { await sendToAgent(b.dataset.proc, spec.messages.process[+b.dataset.n - 1], stepName('PROCESS', +b.dataset.n), { round: null }); updateProcess(); }
+        catch (e) { $('p-err').textContent = e.message; b.disabled = false; }
+      });
+      box.querySelectorAll('[data-paste-go]').forEach(b => b.onclick = () => {
+        const ta = box.querySelector(`[data-paste="${b.dataset.pasteGo}"]`); if (!ta.value.trim()) return;
+        const C2 = chatOf(b.dataset.pasteGo); C2.manual.push(manualEntry(C2, ta.value.trim())); saveProgress(); box.dataset.k = ''; updateProcess();
+      });
+    }
+    $('p-done') && ($('p-done').disabled = !allDone && !dryRun && ONLINE);
+  }
+
+  function renderDone(m) {
+    const files = ['session.json', 'history.jsonl', 'scenario/card.json', 'scenario/interview.md', 'scenario/interview.json', 'scenario/changes.jsonl']
+      .concat(...[1, 2].filter(d => S.d && S.d[String(d)]).map(d => [`day${d}/comparison.json`, d === 1 ? 'day1/what-you-would-do.json' : null].concat(...S.session.agents.map(a => [`day${d}/${a}/conversation.jsonl`, `day${d}/${a}/chat-notes.json`, `day${d}/${a}/after-agent.json`, d === 2 ? `day2/${a}/learning-check.json` : null])))).filter(Boolean);
+    m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day}</div><h2>Thank you. Day ${S.day} is done.</h2>
+      <p class="help">${S.day === 1 ? 'Come back for day 2 with the same participant ID: the agents go in the reverse order, with the same card.' : 'Both days are done.'}</p>
+      <p class="small muted">Saved under <code>data/study/${esc(S.pid)}/</code>:</p><div class="files">${files.map(esc).join('<br>')}</div>
+      <div class="nav"><button class="btn" id="dl">Download everything (JSON)</button><span class="spacer"></span>${S.day === 1 ? '<button class="btn primary" id="d2">Set up day 2</button>' : ''}</div></div>`;
+    $('dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' })); a.download = `${S.pid}-study-state.json`; a.click(); };
+    $('d2') && ($('d2').onclick = () => { D().done.done = true; S.day = 2; go('setup'); });
+    D().done.done = true; saveProgress(true);
+  }
+
+  // MARK: Start
+
+  document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b && !b.disabled) go(b.dataset.go); });
+  setInterval(() => { const k = S && S.stage || ''; if (k.startsWith('chat:')) updateChat(+k.slice(5)); }, 1000);
+  window.addEventListener('beforeunload', () => { if (S) local.set(`${S.pid}.progress`, S); });
+
+  async function boot() {
+    const params = new URLSearchParams(location.search);
+    if (params.has('t')) { params.delete('t'); history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '')); }  // keep the token off screen
+    const task = params.get('task') || local.get('task') || 'Restaurant';
+    if (!ONLINE) {
+      $('console-link').hidden = true;
+      $('main').innerHTML = `<div class="panel"><h2>Open the study through the console</h2><p class="help">Run <code>uv run bench console</code> and open the study address it prints. To try the interview here anyway, load the task’s <code>study.json</code>; answers will stay in this browser.</p><input type="file" id="spec-file" accept=".json"></div>`;
+      $('spec-file').onchange = async e => { try { spec = JSON.parse(await e.target.files[0].text()); agentsAvail = [{ name: 'agent1' }, { name: 'agent2' }]; render(); } catch (err) { alert('That isn’t a study.json'); } };
+      return;
+    }
+    try {
+      spec = await api('/api/study/spec?task=' + encodeURIComponent(task));
+      const st = await api('/api/state');
+      agentsAvail = st.agents || []; dryRun = st.dry_run; snap = st.snapshot; snapVersion = st.version; jobs = st.jobs || [];
+      clockOffset = new Date(st.now).getTime() - Date.now();
+    } catch (e) {
+      $('main').innerHTML = `<div class="panel"><h2>Couldn’t load the study</h2><p class="banner bad">${esc(e.message)}</p></div>`;
+      return;
+    }
+    local.set('task', task);
+    const pid = params.get('pid');
+    if (pid && /^P\d{3,4}$/i.test(pid)) await openParticipant(pid.toUpperCase()); else render();
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

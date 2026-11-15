@@ -116,6 +116,9 @@ header.top h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0
 .controls input[type="search"] { flex: 0 1 220px; }
 .controls label { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); cursor: pointer; user-select: none; }
 .controls label.blind { color: var(--text); font-weight: 550; }
+.study-link { font-size: 12.5px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+.study-link:hover { color: var(--text); border-color: var(--faint); }
+.run-fields select#card { flex: 1 1 140px; min-width: 0; }
 .live { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; }
 .live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .live.on .dot { background: var(--ok); }
@@ -436,6 +439,7 @@ footer ul { margin: 6px 0 10px; padding-left: 18px; }
       <input type="search" id="q" placeholder="Search messages" aria-label="Search messages">
       <label><input type="checkbox" id="details"> Receipts, edits and working</label>
     </div>
+    <a class="study-link" href="/study" title="Walk a participant through a task with a study.json: interview, chats, ratings, comparison">Study page</a>
     <div class="live" id="live"><span class="dot"></span><span id="live-text">Connecting…</span></div>
   </header>
   <div class="banner" id="banner" hidden></div>
@@ -496,8 +500,10 @@ footer ul { margin: 6px 0 10px; padding-left: 18px; }
         </select>
       </label>
       <div class="run-fields" data-mode-only="run" hidden>
-        <input id="task" placeholder="Task, like Housewarming draft" aria-label="Task (the tab's name in the task sheet)">
-        <input id="step" placeholder="Step, like DAY 1 CHECKPOINT 1" aria-label="Step (column A)">
+        <input id="task" placeholder="Task, like Restaurant" aria-label="Task (the tab's name in the task sheet)">
+        <input id="step" list="step-list" placeholder="Step, like DAY 1 OPENING" aria-label="Step (column A)">
+        <datalist id="step-list"></datalist>
+        <select id="card" hidden aria-label="The participant's card, which picks the opening's first sentence and the handoff's last"></select>
         <input id="cell" placeholder="Cell, like D3" aria-label="Cell the prompt came from">
       </div>
       <button class="btn primary" id="send" type="submit" disabled>Send</button>
@@ -1679,8 +1685,46 @@ footer ul { margin: 6px 0 10px; padding-left: 18px; }
   $('text').addEventListener('blur', () => renderComposer());
   for (const id of ['task', 'step', 'cell']) {
     $(id).value = store.get(id, '');
-    $(id).addEventListener('input', () => { store.set(id, $(id).value); renderComposer(); });
+    $(id).addEventListener('input', () => { store.set(id, $(id).value); renderComposer(); studyHelpers(); });
   }
+  $('card').addEventListener('change', () => { store.set('card', $('card').value); studyHelpers(); });
+
+  // A task with a study (tasks/<folder>/study.json, like Restaurant): its steps to pick from, and the
+  // card-specific opening, handoff and process prompts filled in for the step. The study page does the same.
+  const studySpecs = {};
+  let lastTemplate = '';
+  async function studyHelpers() {
+    const task = $('task').value.trim();
+    if (!task) { $('card').hidden = true; return; }
+    if (!(task in studySpecs)) {
+      studySpecs[task] = null;
+      try { studySpecs[task] = await api('/api/study/spec?task=' + encodeURIComponent(task)); } catch (e) {}
+    }
+    const sp = studySpecs[task];
+    $('card').hidden = !sp;
+    if (!sp) { $('step-list').innerHTML = ''; return; }
+    if (!$('card').options.length) {
+      $('card').innerHTML = '<option value="">Card…</option>' + sp.cards.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
+      $('card').value = store.get('card', '');
+      const steps = [];
+      for (const d of [1, 2]) {
+        steps.push(`DAY ${d} OPENING`);
+        for (let r = 1; r <= ((sp.limits || {}).turns || 10); r++) steps.push(`DAY ${d} ROUND ${r}`);
+        steps.push(`DAY ${d} HANDOFF`, `DAY ${d} PROCESS 1`, `DAY ${d} PROCESS 2`);
+      }
+      $('step-list').innerHTML = steps.map(x => `<option value="${x}">`).join('');
+    }
+    const st = $('step').value.trim().toUpperCase(), card = sp.cards.find(c => c.id === $('card').value);
+    let t = '';
+    if (/OPENING$/.test(st) && card) t = sp.messages.opening.replace('{first}', card.first).replace('{last}', card.last);
+    else if (/HANDOFF$/.test(st) && card) t = sp.messages.handoff.replace('{first}', card.first).replace('{last}', card.last);
+    else if (/PROCESS 1$/.test(st)) t = sp.messages.process[0];
+    else if (/PROCESS 2$/.test(st)) t = sp.messages.process[1];
+    const cur = $('text').value;
+    if (t && (!cur.trim() || cur === lastTemplate)) { $('text').value = t; store.set('draft', t); renderComposer(); }
+    lastTemplate = t || lastTemplate;
+  }
+  studyHelpers();
   $('listen').value = store.get('listen', '300');
   if (!$('listen').value) $('listen').value = '300';
   $('listen').addEventListener('change', () => store.set('listen', $('listen').value));

@@ -187,6 +187,19 @@ def test_a_job_is_sent_once_its_message_is_recorded(tmp_path):
     assert again.sent_id == 4
 
 
+def test_an_agent_that_moved_channels_is_matched_on_its_current_one(tmp_path):
+    """Muse was on WhatsApp, then moved to its website; the snapshot has both conversations under "muse"."""
+    c = Console(AGENTS, jobs_dir=tmp_path / "jobs", inboxes={}, runs_dir=tmp_path / "runs")
+    job = Job("a", "run", "muse", "muse", "plan a dinner", state="running", started_at="2026-11-15T09:52:10.000Z")
+    c.jobs = [job]
+    sent = {"type": "message", "id": "m1", "from_me": True, "text": "plan a dinner",
+            "date": "2026-11-15T09:52:12.000Z", "recorded": "2026-11-15T09:52:12.000Z"}
+    c.snap = {"agents": [{"name": "muse", "channel": "muse", "items": [sent]},
+                         {"name": "muse", "channel": "whatsapp", "items": []}]}
+    c._match_sent()
+    assert (job.sent_id, job.sent_at) == ("m1", "2026-11-15T09:52:12.000Z")
+
+
 def test_a_reply_with_a_link_gets_its_page_saved(tmp_path, monkeypatch):
     inbox = tmp_path / "tg" / "messages.jsonl"
     inbox.parent.mkdir()

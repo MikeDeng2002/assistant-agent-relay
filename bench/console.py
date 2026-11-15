@@ -53,7 +53,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from bench import conversation, dashboard, mailview, resets, snapshots, taskview
+from bench import conversation, dashboard, mailview, resets, snapshots, study, taskview
 from bench.config import CHANNELS, PRIVATE_DIR, ROOT, Agent, load_agents
 from bench.inbox import inbox_path
 
@@ -61,10 +61,12 @@ PORT = 8787
 JOBS_DIR = ROOT / "data" / "console"  # data/ is never committed
 TOKEN_FILE = PRIVATE_DIR / "console" / "token"
 TEMPLATE = Path(__file__).with_name("console.html")
+STUDY_TEMPLATE = Path(__file__).with_name("study.html")
 SENDABLE = ("telegram", "whatsapp", "slack", "hark", "wajo", "muse")  # iMessage is parked
 MAX_TEXT = 40_000          # characters in one message
 MAX_LISTEN = 3600          # seconds a message may keep recording after it's sent
 MAX_BODY = 1_000_000       # bytes in one request
+MAX_AUDIO_BODY = 30_000_000  # bytes in one request carrying a voice answer (base64)
 POLL_SECONDS = 1.5         # how often it looks for newly recorded messages
 SENT_SKEW = timedelta(seconds=5)  # a sent message can be stamped a little before its job started
 STOP_GRACE = 30            # seconds running jobs get to write their records when the console stops
@@ -250,7 +252,7 @@ class Console:
         at, messages = None, []
         if after := body.get("after"):
             with self.lock:
-                items = next((a["items"] for a in (self.snap or {}).get("agents", []) if a["name"] == agent.name), [])
+                items = self._items(agent.name, agent.channel)
             boundary = next((i for i in items if i["type"] == "message" and i.get("guid") == after), None)
             if boundary is None:
                 raise ConsoleError("that message isn't among the agent's recorded messages")
@@ -455,15 +457,20 @@ class Console:
                 self._match_sent()
                 self._preempt()
 
+    def _items(self, name: str, channel: str) -> list[dict]:
+        """An agent's recorded conversation on its channel. An agent that moved channels has one
+        conversation per channel in the snapshot (Muse on WhatsApp, then on its website), all under its name."""
+        agents = [a for a in (self.snap or {}).get("agents", []) if a["name"] == name]
+        return next((a["items"] for a in agents if a.get("channel") == channel), agents[0]["items"] if agents else [])
+
     def _match_sent(self) -> None:
         """Marks each message job sent once its message is recorded in the agent's conversation."""
         claimed = {j.sent_id for j in self.jobs if j.sent_id}
-        conversations = {a["name"]: a["items"] for a in (self.snap or {}).get("agents", [])}
         for job in self.jobs:
             if job.kind == "sync" or job.sent_at or not job.started_at:
                 continue
             since = parse(job.started_at) - SENT_SKEW
-            for m in conversations.get(job.agent, []):
+            for m in self._items(job.agent, job.channel):
                 if (m["type"] == "message" and m["from_me"] and m.get("id") is not None and m["id"] not in claimed
                         and m.get("recorded") and parse(m["recorded"]) >= since and same_text(m.get("text"), job.text)):
                     job.sent_at, job.sent_id = m["date"], m["id"]
@@ -632,6 +639,34 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page.encode(), "text/html; charset=utf-8",
                               Content_Security_Policy="default-src 'self'; script-src 'unsafe-inline'; "
                                                       "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+        if url.path == "/study":
+            # Served straight from the link with the token, so it works even where the cookie isn't kept
+            with_token = bool(query.get("t")) and secrets.compare_digest(query["t"][0], self.server.token)
+            if not (with_token or self._cookie_ok()):
+                return self._send(403, b"Open the study page at the full address `uv run bench console` printed: "
+                                       b"http://127.0.0.1:<port>/study?t=<token>. The part after ?t= is needed.",
+                                  "text/plain; charset=utf-8")
+            page = STUDY_TEMPLATE.read_text().replace("__CONSOLE_TOKEN__", json.dumps(self.server.token))
+            extra = {"Set_Cookie": f"{COOKIE}={self.server.token}; Path=/; HttpOnly; SameSite=Strict"} if with_token else {}
+            return self._send(200, page.encode(), "text/html; charset=utf-8", **extra,
+                              Content_Security_Policy="default-src 'self'; script-src 'unsafe-inline'; "
+                                                      "style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; "
+                                                      "frame-ancestors 'none'",
+                              Permissions_Policy="microphone=(self)")
+        if url.path.startswith("/api/study/"):
+            if not self._token_ok():
+                return self._error(403, "wrong or missing token; reload the page")
+            try:
+                if url.path == "/api/study/spec":
+                    return self._json(200, study.spec(query.get("task", [""])[0], self.server.console.tasks_dir))
+                if url.path == "/api/study/load":
+                    return self._json(200, study.load(query.get("pid", [""])[0]))
+                if url.path == "/api/study/list":
+                    return self._json(200, {"participants": study.participants(),
+                                            "studies": study.studies(self.server.console.tasks_dir)})
+            except study.StudyError as e:
+                return self._error(400, str(e))
+            return self._error(404, "not found")
         if url.path == "/api/state":
             if not self._token_ok():
                 return self._error(403, "wrong or missing token; reload the page")
@@ -663,7 +698,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._error(415, "send JSON")
         length = int(self.headers.get("Content-Length") or 0)
-        if length > MAX_BODY:
+        if length > (MAX_AUDIO_BODY if self.path == "/api/study/audio" else MAX_BODY):
             return self._error(413, "that's too long")
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
@@ -683,6 +718,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"reset": console.record_reset(body)})
             if self.path == "/api/grade":
                 return self._json(200, {"grade": console.grade(body)})
+            if self.path == "/api/study/save":
+                return self._json(200, {"saved": study.save(body)})
+            if self.path == "/api/study/audio":
+                return self._json(200, {"saved": study.save_audio(body)})
+        except study.StudyError as e:
+            return self._error(400, str(e))
         except ConsoleError as e:
             return self._error(400, str(e))
         return self._error(404, "not found")
@@ -701,6 +742,7 @@ def serve(port: int = PORT, *, open_browser: bool = False, dry_run: bool = False
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={token}"
     print(f"The console is at {url}\n"
           + ("Dry run: messages typed into it aren't sent anywhere.\n" if dry_run else "")
+          + f"The study page, for a participant: http://127.0.0.1:{server.server_address[1]}/study?t={token}\n"
           + ("It saves the page behind every link in an agent's reply into that agent's run.\n" if console.snapshot_links else "")
           + "Leave this running while you use it. Ctrl-C stops it.", flush=True)
     if open_browser:

@@ -149,6 +149,17 @@ Each message is sent by running the same bench command you'd type, so the checks
 
 `--dry-run` shows everything and sends nothing, for trying it out.
 
+## The study page
+
+For a task with a participant, like the Restaurant gathering, `bench console` also serves a page that walks the participant through a whole task day: the address it prints after the console's, ending in `/study`. The **Study page** button in the console's header opens it too.
+
+- **Pre-task interview** (day 1): one question at a time. The answers pick the next questions: the card chosen, guests who haven't met, a surprise, who pays, and so on. A thin answer gets one follow-up, and "I don't know" is an answer. Long answers can be spoken: the words appear in the box as you talk (Chrome or Safari), and the recording is saved with the answer. It ends with a read-back, where anything can be fixed, and the lock.
+- **Each agent's chat**: the card's opening goes out as a task run, then each reply as `DAY N ROUND n`, then the handoff, with the turn count and the timer outside the chat. Replies show as they're recorded. A reply the console can't see can be pasted in.
+- **After each agent**, the **comparison** (blind, as A and B), **what you'd really do** (day 1) or the **learning check** (day 2), and the agents' **process reports**.
+- Day 2 reverses the order and keeps the locked card. A change to the card after the lock goes to its change log.
+
+Everything is saved as it's answered, under `data/study/<participant>/` (session, card, interview, each conversation, each set of answers, and a history of every change), and kept in the browser as well. The questions aren't in this repository: they're in `tasks/<folder>/study.json`, next to a `run.json` naming the task, since the agents mustn't see them. In Task run mode, the console also offers the task's steps and fills in the card's opening, handoff and process prompts.
+
 ## Running a task
 
 The task sheet isn't in this repo. How to get it, pick a step and score it: [docs/running-tasks.md](docs/running-tasks.md).
