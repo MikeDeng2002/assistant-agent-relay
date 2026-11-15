@@ -976,7 +976,7 @@ footer ul { margin: 6px 0 10px; padding-left: 18px; }
   }
 
   // The console matches each job to its message once it's recorded.
-  const sentMatches = (j, m) => j.sent_id != null && j.sent_id === m.id;
+  const sentMatches = (j, m) => j.sent_id != null && j.sent_id === (j.channel === 'imessage' ? m.guid : m.id);
 
   // Messages typed here that aren't in the recorded conversation yet: queued, being sent, or (dry run) never sent.
   function pendingFor(entry) {

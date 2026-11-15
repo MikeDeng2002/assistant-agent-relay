@@ -950,8 +950,8 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const a = all.find(x => x.channel === channel) || all[0];
     if (!a || !since) return [];
     const t0 = new Date(since).getTime() - 5000;
-    return a.items.filter(i => i.type === 'message' && !i.from_me && !i.service && i.text && new Date(i.date).getTime() >= t0)
-      .map(i => ({ role: 'agent', text: i.text, at: i.date, id: i.id, attachments: i.attachments || [] }));
+    return a.items.filter(i => i.type === 'message' && !i.from_me && (!i.service || (channel === 'imessage' && i.service === 'iMessage')) && i.text && new Date(i.date).getTime() >= t0)
+      .map(i => ({ role: 'agent', text: i.text, at: i.date, id: i.id ?? i.guid, attachments: i.attachments || [] }));
   }
   // The conversation as it happened: what was sent (from the console's jobs), the agent's recorded replies, and any pasted by hand.
   function transcript(agent) {

@@ -2,7 +2,7 @@
 
 Runs Assistant Bench tasks against personal agents from this Mac and records their replies.
 
-> **How each agent is reached (2026-11-07):** Wajo on wajo.ai, Muse on muse.ai and Hark on hark.com, each in the dedicated Chrome; Dots through Slack. Telegram and WhatsApp still work as `channel:` options in `config/agents.yaml`. The iMessage channel described below (`reader/`, `bench/imessage/send.py`) is built and tested but parked; you don't need to set it up.
+> **How each agent is reached (2026-11-07):** Wajo on wajo.ai, Muse on muse.ai and Hark on hark.com, each in the dedicated Chrome; Dots through Slack. Telegram and WhatsApp still work as `channel:` options in `config/agents.yaml`. Instinct can use iMessage with the local setup below.
 
 **Use the `telegram-whatsapp-channels` branch.** It's the newest; `main` is behind. How to get it: [Before you start](docs/connections/README.md#before-you-start).
 
@@ -12,7 +12,14 @@ So far (M0): a sender that sends iMessages through the Messages app, and `bench-
 
 ## Set up
 
-1. Put the handles in `config/agents.yaml`: phone numbers with country code, or emails. For the dry run, set `self` to your own iMessage handle.
+1. Add iMessage contacts to the Git-ignored `config/agents.local.yaml`. Use a phone number with country code or an email enabled for iMessage. For a self-test, use your own iMessage address.
+
+   ```yaml
+   agents:
+     self:
+       channel: imessage
+       handle: "you@example.com"
+   ```
 2. Install the reader:
 
    ```bash
@@ -33,7 +40,7 @@ So far (M0): a sender that sends iMessages through the Messages app, and `bench-
 
    The log should end with `reading chat.db: …`, listing which agents already have a chat. "authorization denied" means the grant hasn't taken effect yet.
 
-Every change to `config/agents.yaml` needs `reader/install.sh` again, and a new approval.
+After changing the iMessage contact list, run `reader/install.sh` again and approve the new reader build.
 
 ## Try it
 
@@ -46,6 +53,18 @@ uv run bench inbox --follow
 ```
 
 The first `send` asks to let Terminal (or Claude) control Messages. Allow it.
+
+The local console (`uv run bench console --open`) supports iMessage for **Message**
+and **Task run**. Turn off **Benchmark only** to see ordinary test messages.
+
+To test an automatic reply, use a second Mac signed in to a separate iMessage
+account. Configure each Mac with the other account as an iMessage contact and
+install the reader on both. On the receiving Mac, run
+`uv run bench imessage-echo CONTACT`, replacing `CONTACT` with the sender's
+configured contact name. Then select the receiving account in your console and
+send `bench ping`. The test agent replies `bench pong` once and exits. Sending to
+`self` tests transport only.
+
 
 ## Slack (Dots)
 
