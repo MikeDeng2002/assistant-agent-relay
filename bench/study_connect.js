@@ -19,6 +19,7 @@ const studyConnect = (() => {
   let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
   let onUpdate;
   let autoSetupAgent = null;
+  let history = [];
   const webChannels = new Set(['hark', 'muse', 'wajo']);
 
   function updateView() {
@@ -42,7 +43,8 @@ const studyConnect = (() => {
     } else if (job?.kind === 'setup' && job.state === 'done' && !verified) {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
-    direction.textContent = instructions;
+    direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
+    renderMessages();
     pairLink.closest('dialog').querySelector('#connector-install').hidden = Boolean(device?.online);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
@@ -50,6 +52,45 @@ const studyConnect = (() => {
     pairLink.closest('dialog').querySelector('#connector-pair').hidden = Boolean(device);
     pairLink.closest('dialog').querySelector('#connector-reopen').hidden = !device || device.online;
     if (device || Date.now() > codeExpiry) codeBox.hidden = true;
+  }
+
+  function renderMessages() {
+    const dialog = pairLink.closest('dialog');
+    const box = dialog.querySelector('#connector-messages');
+    if (!box) return;
+    const entries = history.filter(job => job.agent === selected && job.kind !== 'setup');
+    const fragment = document.createDocumentFragment();
+    for (const job of entries) {
+      const heading = document.createElement('p');
+      heading.className = 'small muted';
+      heading.textContent = `${job.step} · ${job.state}`;
+      fragment.append(heading);
+      if (job.prompt) {
+        const prompt = document.createElement('p');
+        prompt.textContent = `You: ${job.prompt}`;
+        fragment.append(prompt);
+      }
+      for (const reply of job.replies || []) {
+        const message = document.createElement('p');
+        message.style.whiteSpace = 'pre-wrap';
+        message.textContent = `${selected}: ${reply.text}`;
+        fragment.append(message);
+      }
+      if (job.error) {
+        const error = document.createElement('p');
+        error.className = 'err';
+        error.textContent = job.error;
+        fragment.append(error);
+      }
+    }
+    if (!entries.length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No messages yet. Test this connection to see the reply here.';
+      fragment.append(empty);
+    }
+    box.replaceChildren(fragment);
+    dialog.querySelector('#connector-send').disabled = actionPending || !latest.device?.online ||
+      !latest.device?.verified?.includes(selected) || latest.jobs.some(job => ['queued','running'].includes(job.state));
   }
 
   function requestWebSetup() {
@@ -63,7 +104,6 @@ const studyConnect = (() => {
     if (latest.jobs.some(job => ['queued', 'running'].includes(job.state))) return;
     const agent = autoSetupAgent;
     autoSetupAgent = null;
-    if (latest.device.verified?.includes(agent)) return;
     action(() => queue('setup', agent));
   }
 
@@ -72,7 +112,7 @@ const studyConnect = (() => {
     requested = true;
     try {
       latest = await studyAuth.api(url);
-      onUpdate(latest);
+      history = onUpdate(latest) || latest.jobs;
       updateView();
     } catch (error) {
       status.textContent = error.message;
@@ -160,6 +200,13 @@ const studyConnect = (() => {
       action(() => queue('setup', selected));
     };
     test.onclick = () => action(() => queue('test', selected));
+    dialog.querySelector('#connector-send').onclick = () => action(async () => {
+      const input = dialog.querySelector('#connector-message');
+      const text = input.value.trim();
+      if (!text) return;
+      await queue('run', selected, {text, step: 'CONNECTION CHAT'});
+      input.value = '';
+    });
     disconnect.onclick = () => action(async () => {
       await studyAuth.api(url + '/disconnect', {});
       latest.device = null;
@@ -172,14 +219,15 @@ const studyConnect = (() => {
     return studyAuth.api(url + '/job', {kind, agent, ...extra});
   }
 
-  function open(dialog, agent) {
+  function open(dialog, agent, autoSetup = true) {
     if (agent && [...picker.options].some(option => option.value === agent)) {
       picker.value = selected = agent;
     }
     lastError = '';
     updateView();
     if (!dialog.open) dialog.showModal();
-    requestWebSetup();
+    if (autoSetup) requestWebSetup();
+    else autoSetupAgent = null;
     refresh();
   }
 

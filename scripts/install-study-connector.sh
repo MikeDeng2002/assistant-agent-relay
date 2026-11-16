@@ -22,14 +22,24 @@ if ! command -v uv >/dev/null 2>&1; then
   sh "$work/install-uv.sh"
 fi
 checkout="$base/assistant-agent-relay"
+echo 'Downloading the latest Study Connector…'
+curl --fail --location --proto '=https' --tlsv1.2 \
+  https://github.com/MikeDeng2002/assistant-agent-relay/archive/refs/heads/codex/restaurant-study-imessage.tar.gz \
+  -o "$work/source.tar.gz"
+mkdir "$work/source"
+tar -xzf "$work/source.tar.gz" -C "$work/source" --strip-components=1
 if [[ ! -d "$checkout" ]]; then
-  echo 'Downloading Study Connector…'
-  curl --fail --location --proto '=https' --tlsv1.2 \
-    https://github.com/MikeDeng2002/assistant-agent-relay/archive/refs/heads/codex/restaurant-study-imessage.tar.gz \
-    -o "$work/source.tar.gz"
-  mkdir "$work/source"
-  tar -xzf "$work/source.tar.gz" -C "$work/source" --strip-components=1
   mv "$work/source" "$checkout"
+else
+  # Refresh program files, preserving local addresses, credentials, and results.
+  for item in bench reader whatsapp scripts pyproject.toml uv.lock; do
+    if [[ -d "$work/source/$item" ]]; then
+      mkdir -p "$checkout/$item"
+      cp -R "$work/source/$item/." "$checkout/$item/"
+    else
+      cp "$work/source/$item" "$checkout/$item"
+    fi
+  done
 fi
 cd "$checkout"
 uv sync --python 3.12 --locked --no-dev

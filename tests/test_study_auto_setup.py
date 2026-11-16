@@ -46,6 +46,7 @@ selected='muse';
 picker.selectedOptions[0].dataset.channel='muse';
 latest.device.verified=['muse'];
 requestWebSetup();
-assert.equal(calls.length,1);
+assert.equal(calls.length,2);
+assert.deepEqual(calls[1],['setup','muse']);
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True,text=True)

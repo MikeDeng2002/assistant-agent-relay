@@ -293,6 +293,13 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
     <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>
   </div>
+  <section class="connector-recovery" aria-label="Agent conversation">
+    <h3>Agent conversation</h3>
+    <p class="help">Switch Agent above to see its messages. Connection tests and practice chats are separate from the study task.</p>
+    <div id="connector-messages" aria-live="polite" style="max-height:320px;overflow:auto"></div>
+    <label>Message<textarea id="connector-message" rows="2" maxlength="40000" placeholder="Write a practice message…"></textarea></label>
+    <button type="button" class="btn primary" id="connector-send" disabled>Send message</button>
+  </section>
 </dialog>
 
 <script>
@@ -551,8 +558,9 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   function render() {
     const chatButton = $('study-chat');
-    chatButton.hidden = !S?.session?.agents?.length;
+    chatButton.hidden = !connectorEnabled && !S?.session?.agents?.length;
     chatButton.onclick = () => {
+      if (connectorEnabled) { studyConnect.open($('connector-dialog'), null, false); return; }
       const chatStage = stages().find(stage => stage.key.startsWith('chat:'));
       if (chatStage && reachable(chatStage.key)) go(chatStage.key);
       else go('setup');
@@ -642,7 +650,8 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       ${!names.length ? '<p class="banner bad">The console has no agents it can send to. Check config/agents.yaml.</p>' : ''}
       ${HOSTED && !connectorEnabled ? '<p class="banner">Use the agent’s chat app to send the prompts, then paste its replies into the study.</p>' : ''}
       ${connectorEnabled ? `<div class="row connector-controls">
-        <button type="button" class="btn" id="setup-connector">Connect selected agent</button>
+        <button type="button" class="btn" id="setup-connector">Connect Agent 1</button>
+        <button type="button" class="btn" id="setup-connector-2">Connect Agent 2</button>
         <label class="small"><input type="checkbox" id="setup-manual" ${s.manual_connection ? 'checked' : ''}> Copy and paste messages by hand</label>
       </div>` : ''}
       ${dryRun ? '<p class="banner">The console is in dry-run mode: nothing is sent to the agents. Paste their replies by hand to try the flow.</p>' : ''}
@@ -651,10 +660,10 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     </div>`;
     const firstDefault = s.day1_order && s.agents ? s.agents.indexOf(s.day1_order[0]) : (pidNum % 2 === 1 ? 0 : 1);
     $('s-first').value = String(Math.max(0, firstDefault));
-    $('s-n').value = (s.agents?.length === 1 || (HOSTED && !s.agents)) ? '1' : '2';
+    $('s-n').value = (s.agents?.length === 1 || names.length === 1) ? '1' : '2';
     if (HOSTED && names.length === 1) $('s-n').disabled = true;
     const one = () => $('s-n').value === '1';
-    const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); };
+    const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); if ($('setup-connector-2')) $('setup-connector-2').hidden = one(); };
     const note = () => { showN(); if (one()) { $('s-note').textContent = `Only ${$('s-a1').value}: one chat a day, no A/B comparison.`; return; } const d = +$('s-day').value; const a = [$('s-a1').value, $('s-a2').value]; const f = +$('s-first').value;
       const d1 = [a[f], a[1 - f]];
       $('s-note').textContent = d === 1 ? `Day 1 order: ${d1.join(' then ')}. ${S.pid} is ${pidNum % 2 ? 'odd' : 'even'}, so the suggestion is Agent ${pidNum % 2 ? 1 : 2} first.` : `Day 2 reverses day 1: ${(s.day1_order || d1).slice().reverse().join(' then ')}.`; };
@@ -662,6 +671,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (s.agents && locked) { $('s-a1').disabled = $('s-a2').disabled = $('s-first').disabled = $('s-n').disabled = true; }
     if (connectorEnabled) {
       $('setup-connector').onclick = () => studyConnect.open($('connector-dialog'), $('s-a1').value);
+      $('setup-connector-2').onclick = () => studyConnect.open($('connector-dialog'), $('s-a2').value);
       $('setup-manual').onchange = event => {
         s.manual_connection = event.currentTarget.checked;
         $('s-err').textContent = '';
@@ -1171,6 +1181,16 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   function retainConnectorMessages() {
     if (!S) return;
     let changed = false;
+    const history = new Map((S.connector_jobs || []).map(job => [job.id, job]));
+    for (const job of jobs.filter(job => job.kind !== 'setup')) {
+      const previous = history.get(job.id);
+      const merged = {...previous, ...job, replies: job.replies?.length ? job.replies : (previous?.replies || [])};
+      if (JSON.stringify(previous) !== JSON.stringify(merged)) {
+        history.set(job.id, merged);
+        changed = true;
+      }
+    }
+    S.connector_jobs = [...history.values()].slice(-60);
     for (const day of Object.values(S.d || {})) {
       for (const chat of Object.values(day.chats || {})) {
         const received = new Map((chat.received || []).map(reply => [reply.id, reply]));
@@ -1616,6 +1636,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           const key = S?.stage || '';
           if (key.startsWith('chat:')) updateChat(+key.slice(5));
           if (key === 'process') updateProcess();
+          return S?.connector_jobs || result.jobs;
         }, settings.local_connector);
         button.onclick = () => {
           const chat = S?.stage?.match(/^chat:(\d+)$/);

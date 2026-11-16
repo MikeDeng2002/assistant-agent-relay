@@ -56,3 +56,23 @@ def test_address_dialog_returns_input_and_cancel_is_actionable(monkeypatch):
                         SimpleNamespace(returncode=1, stdout=''))
     with pytest.raises(study_connector.ConnectorError, match='cancelled'):
         study_connector.address_dialog('instinct', 'phone number')
+
+
+def test_web_setup_runs_in_project_python_and_reports_failure(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from bench import study_connector as connector
+    python = tmp_path / '.venv/bin/python'
+    python.parent.mkdir(parents=True)
+    python.touch()
+    monkeypatch.setattr(connector, 'ROOT', tmp_path)
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(connector.subprocess, 'run', run)
+    connector.setup_channel('hark')
+    assert calls[0][0] == [str(python), '-m', 'bench.cli', 'hark-login']
+    assert calls[0][1]['timeout'] == 240
+    monkeypatch.setattr(connector.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1))
+    with pytest.raises(connector.ConnectorError, match='Could not complete sign-in'):
+        connector.setup_channel('hark')

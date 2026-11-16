@@ -33,5 +33,13 @@ jobs = [];
 assert.equal(agentMessages('instinct',null)[0].text,'pong updated');
 assert.equal(chatOf('instinct').sent[0].sent_at,'2026-11-15T12:00:00Z');
 assert.equal(agentMessages('instinct',null).length,1);
+jobs = [{id:'hark-test',agent:'hark',kind:'test',prompt:'reply pong',state:'done',replies:[{id:'hark-reply',text:'pong'}]}];
+retainConnectorMessages();
+assert.equal(S.connector_jobs.find(j=>j.agent==='hark').replies[0].text,'pong');
+S = JSON.parse(JSON.stringify(S));
+jobs=[];
+retainConnectorMessages();
+assert.equal(S.connector_jobs.find(j=>j.agent==='hark').replies[0].text,'pong');
+
 '''
     subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)

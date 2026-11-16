@@ -125,7 +125,7 @@ class Devices:
 
     @staticmethod
     def public(row):
-        return {key: row[key] for key in ("id", "agent", "channel", "kind", "step", "state", "sent_at", "error")} | {
+        return {key: row[key] for key in ("id", "agent", "channel", "kind", "prompt", "step", "state", "sent_at", "error")} | {
             "replies": json.loads(row["replies"]),
         }
 

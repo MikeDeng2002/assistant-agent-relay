@@ -144,7 +144,16 @@ def setup_channel(channel):
         subprocess.run(["open", SETTINGS], check=True)
         return
     command = SETUP[channel]
-    prefix = [sys.executable, "-m", "bench.cli"]
+    python = ROOT / ".venv/bin/python"
+    prefix = [str(python) if python.exists() else sys.executable, "-m", "bench.cli"]
+    if channel in {"hark", "muse", "wajo"}:
+        try:
+            result = subprocess.run(prefix + [command], capture_output=True, text=True, timeout=240)
+        except subprocess.TimeoutExpired:
+            raise ConnectorError("Sign-in timed out. Finish signing in, then click Open channel setup again.") from None
+        if result.returncode:
+            raise ConnectorError("Could not complete sign-in. Check the dedicated Chrome window and try Open channel setup again.")
+        return
     if channel == "whatsapp":
         from bench.channels.whatsapp import BRIDGE_DIR
 
@@ -192,6 +201,8 @@ def run_job(origin, credential, job):
         try:
             if configured:
                 setup_channel(agent.channel)
+            elif job["channel"] in {"hark", "muse", "wajo"}:
+                configure_agent(job["agent"], job["channel"])
             else:
                 terminal_command([sys.executable, "-m", "bench.study_connector", "--origin", origin,
                                   "--configure-agent", job["agent"], "--channel", job["channel"]])
