@@ -172,6 +172,8 @@ Each message is sent by running the same bench command you'd type, so the checks
 
 ## The study page
 
+For an online study with email sign-in and a shared results dashboard, see [Hosted study setup](docs/hosted-study.md).
+
 For a task with a participant, like the Restaurant gathering, `bench console` also serves a page that walks the participant through a whole task day: the address it prints after the console's, ending in `/study`. The **Study page** button in the console's header opens it too.
 
 - **Pre-task interview** (day 1): one question at a time. The answers pick the next questions: the card chosen, guests who haven't met, a surprise, who pays, and so on. A thin answer gets one follow-up, and "I don't know" is an answer. Long answers can be spoken: the words appear in the box as you talk (Chrome or Safari), and the recording is saved with the answer. It ends with a read-back, where anything can be fixed, and the lock.

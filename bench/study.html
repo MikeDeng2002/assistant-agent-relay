@@ -166,6 +166,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <span class="grow"></span>
   <span class="saved" id="saved"></span>
   <a class="small" href="/" id="console-link">Agent console</a>
+  <button type="button" class="btn small" id="study-signout" hidden>Sign out</button>
 </header>
 <div class="layout">
   <nav class="rail" id="rail" aria-label="Steps"></nav>
@@ -175,7 +176,8 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 <script>
 (() => {
   const TOKEN = (() => { try { return __CONSOLE_TOKEN__; } catch (e) { return null; } })();
-  const ONLINE = typeof TOKEN === 'string' && !!TOKEN;
+  const HOSTED = (() => { try { return __HOSTED_STUDY__; } catch (e) { return false; } })();
+  const ONLINE = HOSTED || (typeof TOKEN === 'string' && !!TOKEN);
   const POLL_MS = 2000;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -195,10 +197,30 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   let snap = null, snapVersion = null, jobs = [], dryRun = false, clockOffset = 0;
   let polling = null;
   let saveTimer = null, saving = 0, saveErr = '';
+  let cloudWrites = Promise.resolve();
+  const pendingWrites = new Map(), submissions = new Map();
+
+  function cloudSave(key, body) {
+    pendingWrites.set(key, body);
+    saving++; showSaved();
+    cloudWrites = cloudWrites.then(async () => {
+      if (pendingWrites.get(key) !== body) return;
+      try {
+        await api('/api/study/save', body);
+        if (pendingWrites.get(key) === body) pendingWrites.delete(key);
+        if (!pendingWrites.size) saveErr = '';
+        S.savedAt = new Date().toISOString();
+      } catch (error) {
+        saveErr = error.message;
+      }
+    }).finally(() => { saving--; showSaved(); });
+    return cloudWrites;
+  }
 
   // MARK: Server
 
   async function api(path, body) {
+    if (HOSTED) return studyAuth.api(path, body);
     if (!ONLINE) throw new Error('not connected to bench console');
     const r = await fetch(path, { method: body ? 'POST' : 'GET', cache: 'no-store',
       headers: { 'X-Console-Token': TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -212,12 +234,17 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   function showSaved() {
     const el = $('saved');
     el.classList.toggle('err', !!saveErr);
-    el.textContent = saveErr ? `Not saved to disk: ${saveErr} (kept in this browser)` : saving ? 'Saving…' : S && S.savedAt ? `Saved ${clock(S.savedAt)}` : '';
+    el.textContent = saveErr ? `Not saved ${HOSTED ? 'to the study server' : 'to disk'}: ${saveErr}${HOSTED ? '' : ' (kept in this browser)'}` : saving ? 'Saving…' : S && S.savedAt ? `Saved ${clock(S.savedAt)}` : '';
   }
 
   // Writes one of the participant's files. Everything is also kept in this browser, so nothing is lost offline.
   async function saveFile(path, payload) {
     if (!S) return;
+    if (HOSTED) {
+      const body = JSON.parse(JSON.stringify({ pid: S.pid, path, ...payload }));
+      if (body.append) body.append = body.append.map(record => ({ ...record, event_id: crypto.randomUUID() }));
+      return cloudSave(body.append && body.append.length ? body.append[0].event_id : path, body);
+    }
     local.set(`${S.pid}.${path}`, payload);
     if (!ONLINE) { saveErr = 'offline'; showSaved(); return; }
     saving++; showSaved();
@@ -229,9 +256,12 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   }
   function saveProgress(now) {
     if (!S) return;
-    local.set(`${S.pid}.progress`, S);
+    if (!HOSTED) local.set(`${S.pid}.progress`, S);
     clearTimeout(saveTimer);
-    const go = () => saveFile('progress.json', { data: { task: S.task, day: S.day, stage: S.stage, state: S } });
+    const go = () => {
+      saveTimer = null;
+      return saveFile('progress.json', { data: { task: S.task, day: S.day, stage: S.stage, state: S } });
+    };
     if (now) return go();
     saveTimer = setTimeout(go, 700);
   }
@@ -415,8 +445,16 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   async function openParticipant(pid) {
     let saved = null;
-    if (ONLINE) { try { const r = await api('/api/study/load?pid=' + encodeURIComponent(pid)); saved = (r.files['progress.json'] || {}).state || null; } catch (e) {} }
-    if (!saved) saved = local.get(`${pid}.progress`);
+    if (HOSTED) {
+      const result = await api('/api/study/load');
+      saved = result.files['progress.json']?.state || null;
+      for (const day of [1, 2]) {
+        const submission = result.files[`day${day}/submission.json`];
+        if (submission) submissions.set(day, submission);
+      }
+    }
+    if (ONLINE && !HOSTED) { try { const r = await api('/api/study/load?pid=' + encodeURIComponent(pid)); saved = (r.files['progress.json'] || {}).state || null; } catch (e) {} }
+    if (!HOSTED && !saved) saved = local.get(`${pid}.progress`);
     S = saved || { pid, task: spec.task, day: 1, stage: 'setup', session: { participant_id: pid }, pre: { answers: {}, done: {} }, d: {}, cursor: {} };
     S.cursor = S.cursor || {};
     render();
@@ -446,13 +484,15 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       </div>
       <p class="small muted" id="s-note"></p>
       ${!names.length ? '<p class="banner bad">The console has no agents it can send to. Check config/agents.yaml.</p>' : ''}
+      ${HOSTED ? '<p class="banner">Use the agent’s chat app to send the prompts, then paste its replies into the study.</p>' : ''}
       ${dryRun ? '<p class="banner">The console is in dry-run mode: nothing is sent to the agents. Paste their replies by hand to try the flow.</p>' : ''}
       ${day1Done && S.day === 1 ? '<p class="banner ok">Day 1 is finished. Switch to Day 2 to continue with the same card.</p>' : ''}
       <div class="nav"><button class="btn primary" id="s-go">${s.agents ? 'Save and continue' : 'Begin'}</button><span class="err" id="s-err"></span></div>
     </div>`;
     const firstDefault = s.day1_order && s.agents ? s.agents.indexOf(s.day1_order[0]) : (pidNum % 2 === 1 ? 0 : 1);
     $('s-first').value = String(Math.max(0, firstDefault));
-    $('s-n').value = s.agents && s.agents.length === 1 ? '1' : '2';
+    $('s-n').value = (HOSTED ? (s.agents || names).length === 1 : s.agents && s.agents.length === 1) ? '1' : '2';
+    if (HOSTED && names.length === 1) $('s-n').disabled = true;
     const one = () => $('s-n').value === '1';
     const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); };
     const note = () => { showN(); if (one()) { $('s-note').textContent = `Only ${$('s-a1').value}: one chat a day, no A/B comparison.`; return; } const d = +$('s-day').value; const a = [$('s-a1').value, $('s-a2').value]; const f = +$('s-first').value;
@@ -934,7 +974,10 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   async function sendToAgent(agent, text, step, extra = {}) {
     const C = chatOf(agent);
     const entry = { job: null, step, text, created_at: nowIso(), sent_at: null, ...extra };
-    if (ONLINE) {
+    if (HOSTED) {
+      await navigator.clipboard.writeText(text);
+      entry.sent_at = entry.created_at;
+    } else if (ONLINE) {
       const r = await api('/api/send', { agents: [agent], text, mode: 'run', task: S.task, step });
       entry.job = r.jobs[0].id;
       jobs.push(r.jobs[0]);
@@ -1006,13 +1049,15 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (C.handoff) return 'handoff';
     return 'rounds';
   }
+  const sendLabel = text => HOSTED ? text.replace('Send', 'Copy') : text;
+
   function renderCompose(pos) {
     const el = $('compose'); if (!el) return;
     const agent = order()[pos - 1], C = chatOf(agent), lim = spec.limits, phase = chatPhase(C);
     if (phase === 'opening') {
       el.innerHTML = `<div class="small muted">The opening, the same for both agents. The timer starts when it goes out.</div>
         <div class="msg me" style="max-width:100%;align-self:stretch">${esc(compose('opening'))}</div>
-        <div class="row"><span class="spacer"></span><button class="btn primary" id="c-open">Send the opening</button></div><div class="err" id="c-err"></div>`;
+        <div class="row"><span class="spacer"></span><button class="btn primary" id="c-open">${sendLabel('Send the opening')}</button></div><div class="err" id="c-err"></div>`;
       $('c-open').onclick = async () => { $('c-open').disabled = true; try { await sendToAgent(agent, compose('opening'), stepName('OPENING'), { round: 0 }); renderCompose(pos); updateChat(pos); } catch (e) { $('c-err').textContent = e.message; $('c-open').disabled = false; } };
       return;
     }
@@ -1020,16 +1065,18 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       const left = lim.turns - C.rounds;
       el.innerHTML = `<textarea id="c-text" placeholder="${left > 0 ? `Your reply (turn ${C.rounds + 1} of ${lim.turns})` : 'That was your last turn: send the handoff.'}" ${left > 0 ? '' : 'disabled'}></textarea>
         <div class="row">${voiceHTML()}<span class="spacer"></span>
-          <button class="btn" id="c-send" ${left > 0 ? '' : 'disabled'}>Send reply</button>
-          <button class="btn primary" id="c-hand">Send the handoff</button></div>
+          <button class="btn" id="c-send" ${left > 0 ? '' : 'disabled'}>${sendLabel('Send reply')}</button>
+          <button class="btn primary" id="c-hand">${sendLabel('Send the handoff')}</button></div>
         <div class="err" id="c-err"></div>`;
       const ta = $('c-text');
-      const k = `draft.${S.pid}.${S.day}.${agent}`; ta.value = local.get(k) || ''; ta.oninput = () => local.set(k, ta.value);
+      const k = `draft.${S.pid}.${S.day}.${agent}`;
+      ta.value = HOSTED ? '' : local.get(k) || '';
+      if (!HOSTED) ta.oninput = () => local.set(k, ta.value);
       el.querySelector('.mic') && (el.querySelector('.mic').onclick = e => toggleMic(e.currentTarget, ta, `d${S.day}-${agent}-round${C.rounds + 1}`, () => {}));
       const sendReply = async () => {
         const t = ta.value.trim(); if (!t) return;
         stopMic(); $('c-send').disabled = true;
-        try { C.rounds++; await sendToAgent(agent, t, stepName('ROUND', C.rounds), { round: C.rounds }); local.set(k, ''); renderCompose(pos); updateChat(pos); }
+        try { C.rounds++; await sendToAgent(agent, t, stepName('ROUND', C.rounds), { round: C.rounds }); if (!HOSTED) local.set(k, ''); renderCompose(pos); updateChat(pos); }
         catch (e) { C.rounds--; $('c-err').textContent = e.message; $('c-send').disabled = false; }
       };
       $('c-send').onclick = sendReply;
@@ -1145,8 +1192,12 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   // MARK: Polling the console (only while a chat or the process reports are open)
 
-  function ensurePolling() { if (!polling && ONLINE) { poll(); polling = setInterval(poll, POLL_MS); } }
-  function stopPollingUnlessNeeded() { if (polling && !/^(chat:|process)/.test(S.stage || '')) { clearInterval(polling); polling = null; } }
+  function ensurePolling() { if (!polling && ONLINE && !HOSTED) { poll(); polling = setInterval(poll, POLL_MS); } }
+  function stopPollingUnlessNeeded() {
+    if (polling && !/^(chat:|process)/.test(S.stage || '')) {
+      clearInterval(polling); polling = null;
+    }
+  }
   async function poll() {
     try {
       const st = await api('/api/state' + (snapVersion != null ? '?since=' + snapVersion : ''));
@@ -1249,7 +1300,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       html += `<div class="panel" style="box-shadow:none"><h3>Agent ${labelOf(agent)} <span class="small muted">(${esc(agent)})</span></h3>
         ${[1, 2].map(n => { const e = entry(n), r = reply(n); return `<p class="small"><b>Prompt ${n}.</b> ${esc(spec.messages.process[n - 1])}</p>
           ${e ? `<div class="small muted">${r.length ? `Reply recorded ${esc(clock(r[r.length - 1].at))}` : 'Waiting for the reply…'}</div>${r.length ? `<details><summary>Show the reply</summary><div style="white-space:pre-wrap;font-size:13px">${esc(r.map(x => x.text).join('\n\n'))}</div></details>` : ''}` : ''}`; }).join('')}
-        <div class="row" style="margin-top:8px">${next ? `<button class="btn primary small" data-proc="${esc(agent)}" data-n="${next}">Send prompt ${next}</button>` : ''}
+        <div class="row" style="margin-top:8px">${next ? `<button class="btn primary small" data-proc="${esc(agent)}" data-n="${next}">${sendLabel('Send prompt')} ${next}</button>` : ''}
         <details><summary class="small">Paste a reply by hand</summary><textarea data-paste="${esc(agent)}" style="min-height:60px"></textarea><button class="btn small" data-paste-go="${esc(agent)}">Add</button></details></div></div>`;
     });
     if (box.dataset.k !== html) {
@@ -1268,6 +1319,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   }
 
   function renderDone(m) {
+    if (HOSTED) return renderCloudDone(m);
     const files = ['session.json', 'history.jsonl', 'scenario/card.json', 'scenario/interview.md', 'scenario/interview.json', 'scenario/changes.jsonl']
       .concat(...[1, 2].filter(d => S.d && S.d[String(d)]).map(d => [`day${d}/comparison.json`, d === 1 ? 'day1/what-you-would-do.json' : null].concat(...S.session.agents.map(a => [`day${d}/${a}/conversation.jsonl`, `day${d}/${a}/chat-notes.json`, `day${d}/${a}/after-agent.json`, d === 2 ? `day2/${a}/learning-check.json` : null])))).filter(Boolean);
     m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day}</div><h2>Thank you. Day ${S.day} is done.</h2>
@@ -1279,11 +1331,77 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     D().done.done = true; saveProgress(true);
   }
 
+  function renderCloudDone(m) {
+    const day = S.day, submitted = submissions.has(day);
+    m.innerHTML = `<div class="panel"><div class="kicker">Day ${day}</div>
+      <h2>${submitted ? 'Results submitted' : 'Review and submit'}</h2>
+      <p class="help">${submitted ? 'The research team can now see your submission.' : 'Submit your saved answers and chat transcript to the research team.'}</p>
+      <div class="nav"><span class="err" id="submit-error" role="alert"></span>
+      ${submitted ? (day === 1 ? '<button class="btn primary" id="d2">Set up day 2</button>' : '') :
+        '<button class="btn primary" id="submit-results">Submit results</button>'}</div></div>`;
+    $('d2') && ($('d2').onclick = () => { S.day = 2; go('setup'); });
+    const button = $('submit-results');
+    if (!button) return;
+    button.onclick = async () => {
+      button.disabled = true;
+      $('submit-error').textContent = '';
+      try {
+        D().done.done = true;
+        await saveProgress(true);
+        for (const [key, body] of [...pendingWrites]) await cloudSave(key, body);
+        if (pendingWrites.size) throw new Error(saveErr || 'Some of your answers could not be saved.');
+        const { submitted: result } = await api('/api/study/submit', { day, pid: S.pid });
+        submissions.set(day, result);
+        renderCloudDone(m);
+      } catch (error) {
+        $('submit-error').textContent = error.message;
+        button.disabled = false;
+      }
+    };
+  }
+
+  async function bootHosted() {
+    $('console-link').hidden = true;
+    const main = $('main'), signOut = $('study-signout');
+    const open = async member => {
+      if (member.role === 'researcher') { location.replace('/research'); return; }
+      signOut.hidden = false;
+      signOut.onclick = async () => {
+        signOut.disabled = true;
+        try {
+          if (saveTimer) await saveProgress(true);
+          await cloudWrites;
+          for (const [key, body] of [...pendingWrites]) await cloudSave(key, body);
+          if (pendingWrites.size) throw new Error(saveErr || 'Some of your answers could not be saved.');
+          await studyAuth.signOut();
+        } catch (error) { saveErr = error.message; showSaved(); signOut.disabled = false; }
+      };
+      const [questions, settings] = await Promise.all([api('/api/study/spec'), api('/api/study/agents')]);
+      spec = questions;
+      agentsAvail = settings.agents;
+      clockOffset = new Date(settings.now).getTime() - Date.now();
+      await openParticipant(member.pid);
+    };
+    try {
+      const { member } = await api('/api/study/session');
+      await open(member);
+    } catch (error) {
+      if (error.status === 401) studyAuth.signIn(main, 'Sign in to the study', open);
+      else main.innerHTML = `<div class="panel"><p class="err">${esc(error.message)}</p></div>`;
+    }
+  }
+
   // MARK: Start
 
   document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b && !b.disabled) go(b.dataset.go); });
   setInterval(() => { const k = S && S.stage || ''; if (k.startsWith('chat:')) updateChat(+k.slice(5)); }, 1000);
-  window.addEventListener('beforeunload', () => { if (S) local.set(`${S.pid}.progress`, S); });
+  window.addEventListener('beforeunload', event => {
+    if (S && !HOSTED) local.set(`${S.pid}.progress`, S);
+    if (HOSTED && (saveTimer || pendingWrites.size)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
 
   async function boot() {
     const params = new URLSearchParams(location.search);
@@ -1308,7 +1426,12 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const pid = params.get('pid');
     if (pid && /^P\d{3,4}$/i.test(pid)) await openParticipant(pid.toUpperCase()); else render();
   }
-  boot();
+  if (HOSTED) {
+    const script = document.createElement('script');
+    script.src = '/study-auth.js';
+    script.onload = bootHosted;
+    document.head.append(script);
+  } else boot();
 })();
 </script>
 </body>
