@@ -226,6 +226,7 @@ class HarkWeb:
         """Makes sure this Chrome is signed in to Hark, waiting while you sign in. True if it already was."""
         page = self.page()
         if self.session(page):
+            page.bring_to_front()
             return True
         if not page.url.startswith(CHAT_URL):
             page.goto(CHAT_URL, wait_until="domcontentloaded")

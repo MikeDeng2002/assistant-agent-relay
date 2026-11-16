@@ -18,6 +18,8 @@ const studyConnect = (() => {
   let picker, status, direction, codeBox, pairLink, codeText, setup, test, disconnect;
   let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
   let onUpdate;
+  let autoSetupAgent = null;
+  const webChannels = new Set(['hark', 'muse', 'wajo']);
 
   function updateView() {
     if (!mounted) return;
@@ -50,6 +52,21 @@ const studyConnect = (() => {
     if (device || Date.now() > codeExpiry) codeBox.hidden = true;
   }
 
+  function requestWebSetup() {
+    const channel = picker.selectedOptions[0]?.dataset.channel;
+    autoSetupAgent = webChannels.has(channel) ? selected : null;
+    maybeOpenWebSetup();
+  }
+
+  function maybeOpenWebSetup() {
+    if (!autoSetupAgent || !pairLink.closest('dialog').open || actionPending || !latest.device?.online) return;
+    if (latest.jobs.some(job => ['queued', 'running'].includes(job.state))) return;
+    const agent = autoSetupAgent;
+    autoSetupAgent = null;
+    if (latest.device.verified?.includes(agent)) return;
+    action(() => queue('setup', agent));
+  }
+
   async function refresh() {
     if (requested) return;
     requested = true;
@@ -61,6 +78,7 @@ const studyConnect = (() => {
       status.textContent = error.message;
     } finally {
       requested = false;
+      maybeOpenWebSetup();
     }
   }
 
@@ -115,6 +133,7 @@ const studyConnect = (() => {
       selected = picker.value;
       lastError = '';
       updateView();
+      requestWebSetup();
     };
     dialog.querySelector('#connector-pair').onclick = () => action(async () => {
       const {code, expires_in} = await studyAuth.api(url + '/code', {});
@@ -136,7 +155,10 @@ const studyConnect = (() => {
     };
     dialog.querySelector('#connector-manual-command').textContent =
       (localLaunch ? 'uv run python -m bench.study_connector --origin ' : 'cd \"$HOME/Library/Application Support/Study Connector/assistant-agent-relay\" && .venv/bin/python -m bench.study_connector --origin ') + quote(location.origin);
-    setup.onclick = () => action(() => queue('setup', selected));
+    setup.onclick = () => {
+      autoSetupAgent = null;
+      action(() => queue('setup', selected));
+    };
     test.onclick = () => action(() => queue('test', selected));
     disconnect.onclick = () => action(async () => {
       await studyAuth.api(url + '/disconnect', {});
@@ -157,6 +179,7 @@ const studyConnect = (() => {
     lastError = '';
     updateView();
     if (!dialog.open) dialog.showModal();
+    requestWebSetup();
     refresh();
   }
 

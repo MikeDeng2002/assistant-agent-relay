@@ -711,3 +711,11 @@ def test_a_missing_message_box_makes_the_runner_reload_the_chat_once():
     project.url = "https://hark.com/project/example"
     assert hark_module.message_box(project).count() == 1
     assert project.loaded == [project.url]
+
+
+def test_sign_in_reveals_existing_signed_in_tab():
+    page = FakePage(responses={"/api/auth/get-session": {"user": USER}})
+    revealed = []
+    page.bring_to_front = lambda: revealed.append(True)
+    assert HarkWeb(browser=browser(page)).sign_in() is True
+    assert revealed == [True]
