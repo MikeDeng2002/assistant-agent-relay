@@ -112,3 +112,31 @@ def test_echo_only_replies_to_incoming_test_ping(monkeypatch):
     monkeypatch.setattr(send_module, "send", lambda agent, text: sent.append((agent, text)))
     cli.cmd_imessage_echo(argparse.Namespace(agent=AGENT.name))
     assert sent == [(AGENT, "bench pong")]
+
+
+def test_reader_messages_appear_in_study_snapshot_and_task_transcript(tmp_path):
+    from datetime import UTC, datetime
+
+    from bench import conversation, dashboard, runs
+
+    agent = Agent("instinct", "+15550100001", 1, 10, channel="imessage")
+    sent = "2026-11-15T20:00:00Z"
+    replied = "2026-11-15T20:00:03Z"
+    inbox = tmp_path / "messages.jsonl"
+    base = dict(agent=agent.name, handle=agent.handle, service="iMessage")
+    inbox.write_text(
+        event("prompt", **base, is_from_me=True, text="bench ping", date=sent, emitted_at=sent)
+        + event("reply", **base, is_from_me=False, text="bench pong", date=replied, emitted_at=replied)
+    )
+    sources = {"imessage": inbox}
+    run_dir = runs.start(agent, "bench ping", task="Restaurant", step="Day 1",
+                         runs_dir=tmp_path / "runs", now=datetime.fromisoformat(sent))
+    info = runs.rebuild(run_dir, conversation.load(sources))
+    assert info["messages"] == ["prompt", "reply"]
+    assert info["timing"]["agent_messages"] == 1
+
+    snap = dashboard.snapshot({agent.name: agent}, sources, run_dir.parent, now=datetime.now(UTC))
+    [study_agent] = snap["agents"]
+    reply = next(item for item in study_agent["items"] if item.get("guid") == "reply")
+    assert study_agent["channel"] == "imessage"
+    assert reply["text"] == "bench pong" and not reply["from_me"] and not reply.get("service")

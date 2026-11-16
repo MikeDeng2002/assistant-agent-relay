@@ -4,8 +4,6 @@ Runs Assistant Bench tasks against personal agents from this Mac and records the
 
 > **How each agent is reached (2026-11-07):** Wajo on wajo.ai, Muse on muse.ai and Hark on hark.com, each in the dedicated Chrome; Dots through Slack. Telegram and WhatsApp still work as `channel:` options in `config/agents.yaml`. Instinct can use iMessage with the local setup below.
 
-**Use the `telegram-whatsapp-channels` branch.** It's the newest; `main` is behind. How to get it: [Before you start](docs/connections/README.md#before-you-start).
-
 **Setting up an agent, or a connection broke?** [docs/connections/](docs/connections/README.md) has step-by-step first-time setup for each agent and its channel, how to check each connection, and how to reconnect it.
 
 So far (M0): a sender that sends iMessages through the Messages app, and `bench-reader`, the only program allowed to read Messages. It copies the agents' chats, and nothing else, into `data/inbox/`.
@@ -55,7 +53,11 @@ uv run bench inbox --follow
 The first `send` asks to let Terminal (or Claude) control Messages. Allow it.
 
 The local console (`uv run bench console --open`) supports iMessage for **Message**
-and **Task run**. Turn off **Benchmark only** to see ordinary test messages.
+and **Task run**. Select **Everything recorded, every day** to see ordinary test messages.
+
+For Instinct, name the entry `instinct` and set its handle to the iMessage number
+from your own Instinct conversation. This overrides the shared WhatsApp entry
+on your Mac. The study page uses the same local channel configuration.
 
 To test an automatic reply, use a second Mac signed in to a separate iMessage
 account. Configure each Mac with the other account as an iMessage contact and
