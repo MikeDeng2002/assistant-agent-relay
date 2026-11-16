@@ -247,6 +247,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <span class="grow"></span>
   <span class="saved" id="saved"></span>
   <a class="small" href="/" id="console-link">Agent console</a>
+  <button type="button" class="btn small" id="study-chat" hidden>Agent chat</button>
   <button type="button" class="btn small" id="study-connect" hidden>Connect agent</button>
   <button type="button" class="btn small" id="study-signout" hidden>Sign out</button>
 </header>
@@ -549,6 +550,13 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   }
 
   function render() {
+    const chatButton = $('study-chat');
+    chatButton.hidden = !S?.session?.agents?.length;
+    chatButton.onclick = () => {
+      const chatStage = stages().find(stage => stage.key.startsWith('chat:'));
+      if (chatStage && reachable(chatStage.key)) go(chatStage.key);
+      else go('setup');
+    };
     renderRail(); showSaved();
     const m = $('main');
     if (!spec) return;
@@ -1160,9 +1168,35 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     return entry;
   }
 
+  function retainConnectorMessages() {
+    if (!S) return;
+    let changed = false;
+    for (const day of Object.values(S.d || {})) {
+      for (const chat of Object.values(day.chats || {})) {
+        const received = new Map((chat.received || []).map(reply => [reply.id, reply]));
+        for (const entry of chat.sent || []) {
+          const job = jobById(entry.job);
+          if (job?.sent_at && entry.sent_at !== job.sent_at) {
+            entry.sent_at = job.sent_at;
+            changed = true;
+          }
+          for (const reply of job?.replies || []) {
+            const value = {role: 'agent', ...reply, fixedStep: entry.step, fixedRound: entry.round ?? null};
+            if (JSON.stringify(received.get(reply.id)) !== JSON.stringify(value)) {
+              received.set(reply.id, value);
+              changed = true;
+            }
+          }
+        }
+        chat.received = [...received.values()];
+      }
+    }
+    if (changed) saveProgress();
+  }
+
   function agentMessages(agent, since) {
     if (HOSTED && connectorEnabled) {
-      const messages = new Map();
+      const messages = new Map((chatOf(agent).received || []).map(reply => [reply.id, reply]));
       for (const entry of chatOf(agent).sent) {
         const job = jobById(entry.job);
         for (const reply of job?.replies || []) {
@@ -1578,6 +1612,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         studyConnect.mount(dialog, agentsAvail, result => {
           connection = result;
           jobs = result.jobs;
+          retainConnectorMessages();
           const key = S?.stage || '';
           if (key.startsWith('chat:')) updateChat(+key.slice(5));
           if (key === 'process') updateProcess();
