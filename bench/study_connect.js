@@ -20,6 +20,7 @@ const studyConnect = (() => {
   let onUpdate;
   let autoSetupAgent = null;
   let history = [];
+  let renderedMessages = null, renderedAgent = null;
   const webChannels = new Set(['hark', 'muse', 'wajo']);
 
   function updateView() {
@@ -59,6 +60,13 @@ const studyConnect = (() => {
     const box = dialog.querySelector('#connector-messages');
     if (!box) return;
     const entries = history.filter(job => job.agent === selected && job.kind !== 'setup');
+    dialog.querySelector('#connector-send').disabled = actionPending || !latest.device?.online ||
+      !latest.device?.verified?.includes(selected) || latest.jobs.some(job => ['queued','running'].includes(job.state));
+    const signature = JSON.stringify([selected, entries]);
+    if (signature === renderedMessages) return;
+    const followLatest = renderedAgent !== selected || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    renderedMessages = signature;
+    renderedAgent = selected;
     const fragment = document.createDocumentFragment();
     for (const job of entries) {
       const heading = document.createElement('p');
@@ -89,8 +97,7 @@ const studyConnect = (() => {
       fragment.append(empty);
     }
     box.replaceChildren(fragment);
-    dialog.querySelector('#connector-send').disabled = actionPending || !latest.device?.online ||
-      !latest.device?.verified?.includes(selected) || latest.jobs.some(job => ['queued','running'].includes(job.state));
+    if (followLatest) box.scrollTop = box.scrollHeight;
   }
 
   function requestWebSetup() {
