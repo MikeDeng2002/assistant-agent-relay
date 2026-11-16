@@ -1,0 +1,37 @@
+#!/bin/bash
+# Bootstrap a private Study checkout on a participant's Mac.
+set -euo pipefail
+origin="${1:-}"
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo 'The Study Connector currently requires a Mac.' >&2
+  exit 1
+fi
+if [[ ! "$origin" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]+)?$ ]]; then
+  echo 'Use the installation command from your Study website.' >&2
+  exit 1
+fi
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+base="$HOME/Library/Application Support/Study Connector"
+mkdir -p "$base"
+chmod 700 "$base"
+work="$(mktemp -d "$base/download.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+if ! command -v uv >/dev/null 2>&1; then
+  echo 'Installing the Python package manager from Astral…'
+  curl --fail --location --proto '=https' --tlsv1.2 https://astral.sh/uv/install.sh -o "$work/install-uv.sh"
+  sh "$work/install-uv.sh"
+fi
+checkout="$base/assistant-agent-relay"
+if [[ ! -d "$checkout" ]]; then
+  echo 'Downloading Study Connector…'
+  curl --fail --location --proto '=https' --tlsv1.2 \
+    https://github.com/MikeDeng2002/assistant-agent-relay/archive/refs/heads/codex/restaurant-study-imessage.tar.gz \
+    -o "$work/source.tar.gz"
+  mkdir "$work/source"
+  tar -xzf "$work/source.tar.gz" -C "$work/source" --strip-components=1
+  mv "$work/source" "$checkout"
+fi
+cd "$checkout"
+uv sync --python 3.12 --locked --no-dev
+uv run --no-sync python -m bench.study_connector --origin "$origin" --install
+printf '\nReturn to %s/study and click Connect this Mac.\n' "$origin"

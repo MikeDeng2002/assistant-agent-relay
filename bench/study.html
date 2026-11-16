@@ -278,10 +278,12 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       <p>Paste this code when prompted <code id="connector-code"></code></p>
     </details>
   </div>
-  <details class="connector-recovery">
-    <summary>Install the connector on this Mac</summary>
-    <p>From the project checkout on your Mac, run this once.</p>
+  <details class="connector-recovery" id="connector-install" open>
+    <summary>First time on this Mac? Install Study Connector</summary>
+    <p>Open Terminal, paste this command and press Return. It downloads Study Connector and Python. When installation finishes, click Connect this Mac above.</p>
     <p><code id="connector-command"></code></p>
+    <button type="button" class="btn" id="connector-copy-install">Copy installation command</button>
+    <p class="help">If Open Study Connector does nothing, complete this installation first. Each person installs it on their own Mac. Channel sign-in and system permissions follow after pairing.</p>
   </details>
   <div class="row connector-controls">
     <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>

@@ -6,6 +6,7 @@ import os
 import plistlib
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -83,7 +84,7 @@ def agent_channels():
 
 
 def terminal_command(args):
-    command = "cd " + shlex.quote(str(ROOT)) + " && " + shlex.join(args)
+    command = 'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; cd ' + shlex.quote(str(ROOT)) + " && " + shlex.join(args)
     subprocess.run(["osascript", "-e", '''on run argv
         tell application "Terminal"
             activate
@@ -113,6 +114,9 @@ def configure_agent(name, channel):
     store(LOCAL_AGENTS_FILE, local, yaml.safe_dump)
     print(f"Saved {name} on this Mac.")
     if channel == "imessage" and changed:
+        if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
+            subprocess.run(["xcode-select", "--install"], capture_output=True)
+            raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
         subprocess.run([str(ROOT / "reader/install.sh")], check=True)
     else:
         setup_channel(channel)
@@ -120,6 +124,10 @@ def configure_agent(name, channel):
 
 def setup_channel(channel):
     if channel == "imessage":
+        subprocess.run(["open", "-a", "Messages"], check=True)
+        if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
+            subprocess.run(["xcode-select", "--install"], capture_output=True)
+            raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
         domain = f"gui/{os.getuid()}/local.personal-agent-benchmark.bench-reader"
         if subprocess.run(["launchctl", "print", domain], capture_output=True).returncode:
             terminal_command([str(ROOT / "reader/install.sh")])
@@ -131,6 +139,9 @@ def setup_channel(channel):
         from bench.channels.whatsapp import BRIDGE_DIR
 
         if not (BRIDGE_DIR / "bench-whatsapp").exists():
+            if not shutil.which("go"):
+                subprocess.run(["open", "https://go.dev/dl/"], check=True)
+                raise ConnectorError("Install Go using the macOS installer that just opened, then open channel setup again. WhatsApp needs it to build the connection program.")
             command_line = shlex.join(prefix + ["whatsapp-install"]) + " && " + shlex.join(prefix + [command])
             terminal_command(["/bin/sh", "-c", command_line])
             return
@@ -174,6 +185,8 @@ def run_job(origin, credential, job):
             else:
                 terminal_command([sys.executable, "-m", "bench.study_connector", "--origin", origin,
                                   "--configure-agent", job["agent"], "--channel", job["channel"]])
+        except ConnectorError as error:
+            report("failed", error=str(error))
         except (OSError, subprocess.SubprocessError):
             report("failed", error="Could not open setup. Open the channel on your Mac and try again.")
         else:

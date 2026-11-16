@@ -41,6 +41,7 @@ const studyConnect = (() => {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
     direction.textContent = instructions;
+    pairLink.closest('dialog').querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
     disconnect.hidden = !device;
@@ -122,10 +123,19 @@ const studyConnect = (() => {
       pairLink.href = 'study-connector://pair/' + encodeURIComponent(code);
       codeBox.hidden = false;
     });
-    dialog.querySelector('#connector-command').textContent =
-      'uv run python -m bench.study_connector --origin ' + location.origin + ' --install';
+    const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+    const installCommand = 'installer=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh -o "$installer" && /bin/bash "$installer" ' + quote(location.origin);
+    dialog.querySelector('#connector-command').textContent = installCommand;
+    dialog.querySelector('#connector-copy-install').onclick = async event => {
+      try {
+        await navigator.clipboard.writeText(installCommand);
+        event.target.textContent = 'Copied · paste into Terminal';
+      } catch {
+        event.target.textContent = 'Select and copy the command above';
+      }
+    };
     dialog.querySelector('#connector-manual-command').textContent =
-      'uv run python -m bench.study_connector --origin ' + location.origin;
+      (localLaunch ? 'uv run python -m bench.study_connector --origin ' : 'cd \"$HOME/Library/Application Support/Study Connector/assistant-agent-relay\" && .venv/bin/python -m bench.study_connector --origin ') + quote(location.origin);
     setup.onclick = () => action(() => queue('setup', selected));
     test.onclick = () => action(() => queue('test', selected));
     disconnect.onclick = () => action(async () => {
