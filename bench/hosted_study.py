@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import re
+import subprocess
+import sys
 from datetime import UTC, datetime
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,7 +15,7 @@ from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from bench import study, taskview
+from bench import study, study_devices, taskview
 
 ACCESS = "study_access"
 REFRESH = "study_refresh"
@@ -89,13 +91,17 @@ class Supabase:
 class StudyServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, origin, address, db, tasks_dir, task, agents):
+    def __init__(self, origin, address, db, tasks_dir, task, agents, devices=None):
         super().__init__(address, StudyHandler)
         self.origin = origin
         self.host = urlsplit(origin).netloc
         self.db = db
         self.spec = study.spec(task, tasks_dir)
         self.agents = agents
+        self.devices = devices
+        self.local_connector = (sys.platform == "darwin" and self.server_address[0] == "127.0.0.1"
+                                and urlsplit(origin).hostname in ("127.0.0.1", "localhost"))
+        self.channels = {a["name"]: a["channel"] for a in agents if a["channel"] in study_devices.CHANNELS}
 
 
 class StudyHandler(BaseHTTPRequestHandler):
@@ -162,7 +168,8 @@ class StudyHandler(BaseHTTPRequestHandler):
             target = urlsplit(self.path)
             if not post:
                 return self.get_route(target.path)
-            if self.headers.get("Origin") != self.server.origin:
+            connector = target.path.startswith("/api/connector/")
+            if not connector and self.headers.get("Origin") != self.server.origin:
                 raise RequestError(403, "Open the study at its configured web address.")
             if self.headers.get_content_type() != "application/json":
                 raise RequestError(415, "Send a JSON request.")
@@ -173,13 +180,27 @@ class StudyHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size) or b"{}")
             if not isinstance(body, dict):
                 raise ValueError
+            if connector:
+                return self.connector_route(target.path, body)
             self.post_route(target.path, body)
-        except RequestError as error:
+        except (RequestError, study_devices.DeviceError) as error:
             self.json(error.status, {"error": str(error)})
         except study.StudyError as error:
             self.json(400, {"error": str(error)})
         except (ValueError, UnicodeError, RecursionError):
             self.json(400, {"error": "Invalid study request."})
+
+    def connector_route(self, path, body):
+        devices = self.server.devices
+        if not devices:
+            raise RequestError(404, "The Study Connector is unavailable.")
+        action = path.removeprefix("/api/connector/")
+        if action == "pair":
+            return self.json(200, devices.pair(body.get("code"), body.get("agents"), self.server.channels))
+        if action in ("poll", "report"):
+            credential = self.headers.get("Authorization", "").removeprefix("Bearer ")
+            return self.json(200, devices.exchange(credential, action, body, self.server.channels))
+        raise RequestError(404, "Page not found.")
 
     def page(self, name):
         page = (TEMPLATES / name).read_text()
@@ -191,8 +212,9 @@ class StudyHandler(BaseHTTPRequestHandler):
         db = self.server.db
         if path == "/":
             return self.respond(303, b"", "text/plain", location="/study")
-        if path == "/study-auth.js":
-            return self.respond(200, (TEMPLATES / "study_auth.js").read_bytes(),
+        if path in ("/study-auth.js", "/study-connect.js"):
+            name = {"/study-auth.js": "study_auth.js", "/study-connect.js": "study_connect.js"}[path]
+            return self.respond(200, (TEMPLATES / name).read_bytes(),
                                 "text/javascript; charset=utf-8")
         if path in ("/study", "/research"):
             return self.page("study.html" if path == "/study" else "study_research.html")
@@ -203,7 +225,11 @@ class StudyHandler(BaseHTTPRequestHandler):
             return self.json(200, self.server.spec)
         if path == "/api/study/agents" and member["role"] == "participant":
             return self.json(200, {"agents": self.server.agents,
-                                   "now": datetime.now(UTC).isoformat()})
+                                   "now": datetime.now(UTC).isoformat(),
+                                   "connector": bool(self.server.devices),
+                                   "local_connector": self.server.local_connector})
+        if path == "/api/study/connection" and member["role"] == "participant" and self.server.devices:
+            return self.json(200, self.server.devices.status(member["user_id"]))
         if path == "/api/study/load" and member["role"] == "participant":
             pid = member["pid"]
             rows = db.rows("study_results", token, pid=f"eq.{pid}", select="path,content",
@@ -279,6 +305,32 @@ class StudyHandler(BaseHTTPRequestHandler):
         pid = member["pid"]
         if body.get("pid", pid) != pid:
             raise RequestError(403, "This account is assigned to another participant ID.")
+        if self.server.devices and path.startswith("/api/study/connection/"):
+            owner = member["user_id"]
+            devices = self.server.devices
+            action = path.removeprefix("/api/study/connection/")
+            if action == "code":
+                return self.json(200, devices.code(owner))
+            if action == "launch" and self.server.local_connector:
+                code = body.get("code")
+                link = "study-connector://open"
+                if code is not None:
+                    devices.check_code(owner, code)
+                    if not re.fullmatch(r"[A-Za-z0-9_-]{24}", code):
+                        raise RequestError(400, "Generate a pairing code in Study first.")
+                    link = f"study-connector://pair/{code}"
+                app = Path.home() / "Applications" / "Study Connector.app"
+                try:
+                    subprocess.run(["/usr/bin/open", "-a", str(app), link], check=True, capture_output=True, timeout=8)
+                except (OSError, subprocess.SubprocessError):
+                    raise RequestError(503, "Could not open Study Connector. Check that it is installed on this Mac.") from None
+                return self.json(200, {})
+            if action == "disconnect":
+                devices.disconnect(owner)
+                return self.json(200, {})
+            if action == "job":
+                return self.json(200, devices.queue(owner, self.server.channels, self.server.spec["task"], body))
+            raise RequestError(404, "Page not found.")
         if path == "/api/study/save":
             file_path, content = study.result_payload(body)
             if isinstance(content, list):
@@ -319,6 +371,7 @@ def main():
     parser.add_argument("--task", default=os.environ.get("STUDY_TASK", "Restaurant"))
     parser.add_argument("--tasks-dir", type=Path, default=Path(os.environ.get("STUDY_TASKS_DIR", taskview.TASKS_DIR)))
     parser.add_argument("--agents", default=os.environ.get("STUDY_AGENTS", "instinct:imessage"))
+    parser.add_argument("--connector-db", type=Path, default=Path(os.environ.get("STUDY_CONNECTOR_DB", "data/study-connector.sqlite3")))
     args = parser.parse_args()
     origin = args.origin or f"http://127.0.0.1:{args.port}"
     address = urlsplit(origin)
@@ -334,7 +387,7 @@ def main():
         agents.append({"name": name, "channel": channel})
     try:
         db = Supabase(os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_PUBLISHABLE_KEY", ""))
-        server = StudyServer(origin, (args.bind, args.port), db, args.tasks_dir, args.task, agents)
+        server = StudyServer(origin, (args.bind, args.port), db, args.tasks_dir, args.task, agents, study_devices.Devices(args.connector_db))
     except (ValueError, study.StudyError) as error:
         parser.error(str(error))
     print(f"Study website: {origin}/study", flush=True)

@@ -31,7 +31,7 @@ const studyAuth = (() => {
   }
 
   function signIn(panel, title, onSignIn) {
-    panel.innerHTML = `<div class="panel"><h2></h2>
+    panel.innerHTML = `<div class="panel auth-card"><h2></h2>
       <form id="study-login">
         <label>Email<input id="study-email" type="email" autocomplete="username" required></label>
         <label>Password<input id="study-password" type="password" autocomplete="current-password" required></label>

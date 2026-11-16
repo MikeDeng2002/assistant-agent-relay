@@ -1,0 +1,154 @@
+/* The browser uses its Study login. The Mac uses a separate device credential. */
+const studyConnect = (() => {
+  const labels = {
+    imessage: 'iMessage', whatsapp: 'WhatsApp', slack: 'Slack',
+    muse: 'muse.ai', hark: 'hark.com', wajo: 'wajo.ai', telegram: 'Telegram',
+  };
+  const help = {
+    imessage: 'Sign in to Messages. Allow the reader in Full Disk Access, then allow automation when macOS asks to control Messages.',
+    whatsapp: 'Scan the QR code in Terminal with WhatsApp → Linked Devices on your phone.',
+    slack: 'Sign in to the workspace containing your Dot in the dedicated Chrome window. The connector uses your locally configured Slack app token.',
+    muse: 'Sign in to Muse in the dedicated Chrome window and wait for the main chat to open.',
+    hark: 'Sign in to Hark in the dedicated Chrome window.',
+    wajo: 'Sign in to Wajo in the dedicated Chrome window.',
+    telegram: 'Sign in to Telegram in Terminal when prompted.',
+  };
+  const url = '/api/study/connection';
+  let latest = { device: null, jobs: [] };
+  let picker, status, direction, codeBox, pairLink, codeText, setup, test, disconnect;
+  let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
+  let onUpdate;
+
+  function updateView() {
+    if (!mounted) return;
+    const { device, jobs } = latest;
+    const channel = picker.selectedOptions[0]?.dataset.channel;
+    const available = device?.agents?.[selected] === channel;
+    const verified = device?.verified?.includes(selected);
+    const job = jobs.findLast(j => j.agent === selected && j.kind !== 'run');
+    const pending = jobs.some(j => j.kind !== 'run' && ['queued', 'running'].includes(j.state));
+    status.textContent = lastError || (!device ? 'This Mac is not paired.' :
+      !device.online ? 'Paired · Mac offline' :
+      pending && job?.agent === selected && ['queued', 'running'].includes(job.state) ?
+        (job.kind === 'test' ? 'Waiting for the agent’s test reply…' : 'Opening channel setup on your Mac…') :
+      job?.state === 'failed' ? job.error :
+      verified ? 'Connected · test reply received' :
+      available ? 'Mac online · ready to test' : 'Mac online · this agent is not configured on the Mac.');
+    let instructions = help[channel] || '';
+    if (device?.online && !available) {
+      instructions = 'Open channel setup and finish configuring this agent on your Mac. ' + instructions;
+    } else if (job?.kind === 'setup' && job.state === 'done' && !verified) {
+      instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
+    }
+    direction.textContent = instructions;
+    setup.disabled = actionPending || !device?.online || !channel || pending;
+    test.disabled = actionPending || !device?.online || !available || pending;
+    disconnect.hidden = !device;
+    pairLink.closest('dialog').querySelector('#connector-pair').hidden = Boolean(device);
+    pairLink.closest('dialog').querySelector('#connector-reopen').hidden = !device || device.online;
+    if (device || Date.now() > codeExpiry) codeBox.hidden = true;
+  }
+
+  async function refresh() {
+    if (requested) return;
+    requested = true;
+    try {
+      latest = await studyAuth.api(url);
+      onUpdate(latest);
+      updateView();
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      requested = false;
+    }
+  }
+
+  async function action(fn) {
+    actionPending = true;
+    lastError = '';
+    updateView();
+    try {
+      await fn();
+      await refresh();
+    } catch (error) {
+      lastError = error.message;
+    } finally {
+      actionPending = false;
+      updateView();
+    }
+  }
+
+  function mount(dialog, agents, callback, localLaunch) {
+    if (mounted) return;
+    mounted = true;
+    onUpdate = callback;
+    picker = dialog.querySelector('#connector-agent');
+    status = dialog.querySelector('#connector-status');
+    direction = dialog.querySelector('#connector-help');
+    codeBox = dialog.querySelector('#connector-code-box');
+    codeText = dialog.querySelector('#connector-code');
+    pairLink = dialog.querySelector('#connector-pair-link');
+    setup = dialog.querySelector('#connector-setup');
+    test = dialog.querySelector('#connector-test');
+    disconnect = dialog.querySelector('#connector-disconnect');
+
+    for (const {name, channel} of agents) {
+      if (!labels[channel]) continue;
+      const label = name.charAt(0).toUpperCase() + name.slice(1);
+      const option = new Option(label + ' · ' + labels[channel], name);
+      option.dataset.channel = channel;
+      picker.add(option);
+    }
+    if (localLaunch) {
+      pairLink.onclick = event => {
+        event.preventDefault();
+        action(() => studyAuth.api(url + '/launch', {code: codeText.textContent}));
+      };
+      dialog.querySelector('#connector-reopen').onclick = event => {
+        event.preventDefault();
+        action(() => studyAuth.api(url + '/launch', {}));
+      };
+    }
+    selected = picker.value;
+    picker.onchange = () => {
+      selected = picker.value;
+      lastError = '';
+      updateView();
+    };
+    dialog.querySelector('#connector-pair').onclick = () => action(async () => {
+      const {code, expires_in} = await studyAuth.api(url + '/code', {});
+      codeExpiry = Date.now() + expires_in * 1000;
+      codeText.textContent = code;
+      pairLink.href = 'study-connector://pair/' + encodeURIComponent(code);
+      codeBox.hidden = false;
+    });
+    dialog.querySelector('#connector-command').textContent =
+      'uv run python -m bench.study_connector --origin ' + location.origin + ' --install';
+    dialog.querySelector('#connector-manual-command').textContent =
+      'uv run python -m bench.study_connector --origin ' + location.origin;
+    setup.onclick = () => action(() => queue('setup', selected));
+    test.onclick = () => action(() => queue('test', selected));
+    disconnect.onclick = () => action(async () => {
+      await studyAuth.api(url + '/disconnect', {});
+      latest.device = null;
+    });
+    refresh();
+    setInterval(refresh, 2500);
+  }
+
+  function queue(kind, agent, extra = {}) {
+    return studyAuth.api(url + '/job', {kind, agent, ...extra});
+  }
+
+  function open(dialog, agent) {
+    if (agent && [...picker.options].some(option => option.value === agent)) {
+      picker.value = selected = agent;
+    }
+    lastError = '';
+    updateView();
+    if (!dialog.open) dialog.showModal();
+    refresh();
+  }
+
+  return {mount, open, queue};
+})();

@@ -2,8 +2,8 @@
 
 The hosted study uses Supabase for email/password login, study results, and recordings.
 Participants go to `/study`. Researchers go to `/research`.
-The hosted site supports copying prompts to an agent's chat app and pasting replies.
-The Mac bench console still handles automatic iMessage in its local study flow.
+The hosted site can send prompts and receive replies through the Study Connector
+on a participant’s Mac. Participants can also select **Copy and paste messages by hand**.
 
 ## Database and accounts
 
@@ -32,6 +32,33 @@ own result files. Researchers can read all study results and recordings and
 download results with the change history. The web server uses the publishable
 key and each person's login session.
 
+## Connect a Mac
+
+From a checkout of the same version of this project, install the Study Connector
+for your study’s website. Use the site’s origin without the trailing `/study`.
+
+```sh
+uv run python -m bench.study_connector --origin https://study.example.com --install
+```
+
+In Study, select **Connect an agent**, choose a channel, and click **Connect this
+Mac → Open Study Connector**. Confirm the site and code on your Mac. A pairing
+code lasts five minutes. To pair from Terminal, run the same command without
+`--install` and enter the code displayed under **Enter the pairing code manually**.
+To resume a paired connection, click **Open paired connector**. A pairing lasts
+30 days, or until the participant disconnects it in Study.
+
+The connector uses the local agents configured by the benchmark. Open channel setup to enter an agent address locally if it is missing. Keep account tokens in local configuration. For a WhatsApp alternative for an
+agent already configured on another channel, use a separate name, such as
+`instinct-whatsapp`, in both the local configuration and `STUDY_AGENTS`.
+
+Click **Open channel setup** to open the macOS settings, sign-in, or linking flow
+for the selected channel. Complete the channel’s permissions or sign-in on the
+Mac, then click **Test connection**. The readiness check requires a reply to a
+unique test message. See [channel-specific setup](connections/README.md) for
+first-time account requirements. Study shows incoming replies and task status
+when the paired Mac is online.
+
 ## Start the website
 
 Set these environment variables locally or on the hosting platform:
@@ -43,6 +70,7 @@ Set these environment variables locally or on the hosting platform:
 | `STUDY_TASK` | Task name from its `run.json`, defaults to `Restaurant` |
 | `STUDY_TASKS_DIR` | Path to the private task directory containing the task's `run.json` and `study.json` |
 | `STUDY_AGENTS` | Comma-separated names and channels, such as `instinct:imessage` |
+| `STUDY_CONNECTOR_DB` | Persistent local SQLite file for pairings and outstanding tasks, defaults to `data/study-connector.sqlite3` |
 | `STUDY_ORIGIN` | The exact site origin, such as `https://study.example.com`, for remote hosting |
 
 The task directory stays private on the host. It is not part of the public
@@ -54,8 +82,46 @@ uv run --env-file .env python -m bench.hosted_study --port 8874
 
 The local site opens at `http://127.0.0.1:8874/study`. Behind an HTTPS
 hosting proxy, start the same service with `--bind 0.0.0.0` and let the host
-set `PORT`. Share the hosted `/study` URL with participants and the hosted
+set `PORT`. Run one Study instance with a persistent writable volume for the connector database. Share the hosted `/study` URL with participants and the hosted
 `/research` URL with the team.
+
+## Publish a pilot on Render
+
+Use the included fictional [demo study](../examples/study/browser-smoke/) to
+check remote connections while the team prepares the official task. Push a
+branch containing both the hosted app and the connector changes to GitHub.
+In Render, create a **Web Service**, connect that branch, and select **Python 3**.
+Keep the repository root as the service root directory.
+
+| Render setting | Value |
+| --- | --- |
+| Build command | `uv sync --python 3.12 --locked --no-dev` |
+| Start command | `uv run --no-sync python -m bench.hosted_study --bind 0.0.0.0 --origin "${STUDY_ORIGIN:-$RENDER_EXTERNAL_URL}"` |
+| Health check path | `/study` |
+| `STUDY_TASK` | `Browser Smoke Test` |
+| `STUDY_TASKS_DIR` | `examples/study` |
+| `STUDY_AGENTS` | `instinct:imessage` for the first pilot |
+| `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` | The values from the intended Supabase project's **Connect** screen |
+| `STUDY_CONNECTOR_DB` | `/var/data/study-connector.sqlite3` with a persistent disk mounted at `/var/data` |
+
+Use a paid instance with a persistent disk to keep active tasks and device
+pairings across restarts. For a disposable connection demo on a free instance,
+leave `STUDY_CONNECTOR_DB` unset. Participants may need to pair again after a
+restart. Study results live in Supabase in either case. Use a separate demo
+participant ID for the pilot. When using a custom domain, set `STUDY_ORIGIN` to
+its exact HTTPS origin and give participants the matching origin for installation.
+
+After deployment, open `https://<service>.onrender.com/study` and verify that
+a participant and a researcher can sign in at their respective addresses.
+Share the participant URL and login privately. For the first remote test, have
+the participant open the page on a Mac, install the connector from the same
+GitHub branch, pair it with the hosted site, complete the selected channel's
+sign-in and permissions, then click **Test connection**. Use **Open channel
+setup** to configure a missing local address. Submit a demo result and confirm
+that it appears in `/research` before sending the link to the other participants.
+
+When the formal study arrives, give the host the private task directory and
+set `STUDY_TASKS_DIR` and `STUDY_TASK` accordingly.
 
 For a smoke test, complete a fictional study day, click **Submit results**, and
 reload the page. Sign in separately as a researcher and confirm the participant
