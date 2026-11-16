@@ -93,6 +93,16 @@ def terminal_command(args):
     end run''', command], check=True, capture_output=True)
 
 
+def address_dialog(name, description):
+    result = subprocess.run(["osascript", "-e", '''on run argv
+        set answer to display dialog (item 1 of argv) default answer "" buttons {"Cancel", "Save"} default button "Save" with title "Study Connector"
+        return text returned of answer
+    end run''', f"Enter the agent's {description} for {name}."], capture_output=True, text=True)
+    if result.returncode:
+        raise ConnectorError("Address entry cancelled. Open channel setup to try again.")
+    return result.stdout.strip()
+
+
 def configure_agent(name, channel):
     """Collect the address on the Mac and keep it in the ignored local config."""
     descriptions = {
@@ -102,7 +112,7 @@ def configure_agent(name, channel):
         "telegram": "Telegram username",
     }
     try:
-        raw = SITES[channel] if channel in SITES else input(descriptions[channel] + ": ")
+        raw = SITES[channel] if channel in SITES else address_dialog(name, descriptions[channel])
         handle = normalize_handle(raw, channel)
     except ConfigError as error:
         raise ConnectorError(str(error)) from None
@@ -243,7 +253,7 @@ def install(origin):
     launcher = Path(STATE) / "launch"
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     prefix = [sys.executable, "-m", "bench.study_connector", "--origin", origin, "--if-paired"]
-    launcher.write_text("#!/bin/sh\ncd " + shlex.quote(str(ROOT)) + " || exit 1\nexec " + shlex.join(prefix) + ' "$@"\n')
+    launcher.write_text('#!/bin/sh\nexport PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\ncd ' + shlex.quote(str(ROOT)) + " || exit 1\nexec " + shlex.join(prefix) + ' "$@"\n')
     launcher.chmod(0o700)
     path = json.dumps(str(launcher))
     apple_script = f'''on run
@@ -283,6 +293,22 @@ def install(origin):
         plistlib.dump(info, stream)
     subprocess.run(["codesign", "--force", "--sign", "-", str(APP)], check=True)
     subprocess.run(["open", "-a", str(APP)], check=True)
+    # Restore an already approved pairing when the user next signs into this Mac.
+    from bench.study_devices import digest
+    label = "org.agentrelay.study-connector." + digest(origin)[:12]
+    agents_dir = Path.home() / "Library/LaunchAgents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    agent_file = agents_dir / f"{label}.plist"
+    log = STATE / "connector.log"
+    with agent_file.open("wb") as stream:
+        plistlib.dump({"Label": label, "ProgramArguments": prefix,
+                      "WorkingDirectory": str(ROOT), "RunAtLoad": True,
+                      "StartInterval": 30, "StandardOutPath": str(log),
+                      "StandardErrorPath": str(log),
+                      "EnvironmentVariables": {"PATH": str(Path.home() / ".local/bin") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"}}, stream)
+    domain = f"gui/{os.getuid()}"
+    subprocess.run(["launchctl", "bootout", domain + "/" + label], capture_output=True)
+    subprocess.run(["launchctl", "bootstrap", domain, str(agent_file)], check=True)
     print(f"Installed {APP}. Return to Study and click Open Study Connector.")
 
 

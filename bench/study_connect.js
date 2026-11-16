@@ -25,7 +25,7 @@ const studyConnect = (() => {
     const channel = picker.selectedOptions[0]?.dataset.channel;
     const available = device?.agents?.[selected] === channel;
     const verified = device?.verified?.includes(selected);
-    const job = jobs.findLast(j => j.agent === selected && j.kind !== 'run');
+    const job = jobs.find(j => j.agent === selected && j.kind !== 'run');
     const pending = jobs.some(j => j.kind !== 'run' && ['queued', 'running'].includes(j.state));
     status.textContent = lastError || (!device ? 'This Mac is not paired.' :
       !device.online ? 'Paired · Mac offline' :
@@ -41,7 +41,7 @@ const studyConnect = (() => {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
     direction.textContent = instructions;
-    pairLink.closest('dialog').querySelector('#connector-install').hidden = Boolean(device);
+    pairLink.closest('dialog').querySelector('#connector-install').hidden = Boolean(device?.online);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
     disconnect.hidden = !device;

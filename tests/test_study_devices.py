@@ -44,3 +44,15 @@ def test_run_requires_matching_reply_and_claim_is_atomic(tmp_path):
     assert devices.status(owner)["device"]["verified"] == ["instinct"]
     queued = devices.queue(owner, AGENTS, "Restaurant", run)
     assert devices.exchange(token, "poll", {"agents": AGENTS}, AGENTS)["job"]["id"] == queued["id"]
+
+
+def test_address_dialog_returns_input_and_cancel_is_actionable(monkeypatch):
+    from types import SimpleNamespace
+    from bench import study_connector
+    monkeypatch.setattr(study_connector.subprocess, 'run', lambda *a, **kw:
+                        SimpleNamespace(returncode=0, stdout='  +16505550123\n'))
+    assert study_connector.address_dialog('instinct', 'phone number') == '+16505550123'
+    monkeypatch.setattr(study_connector.subprocess, 'run', lambda *a, **kw:
+                        SimpleNamespace(returncode=1, stdout=''))
+    with pytest.raises(study_connector.ConnectorError, match='cancelled'):
+        study_connector.address_dialog('instinct', 'phone number')
