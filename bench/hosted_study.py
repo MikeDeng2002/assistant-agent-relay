@@ -88,6 +88,37 @@ class Supabase:
                      body={"participant": pid, "file_path": path, "payload": content})
 
 
+class ScopedResults:
+    """Separate task results without changing participant identities or older records."""
+    def __init__(self, db, scope):
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", scope):
+            raise ValueError("Choose a valid STUDY_RESULT_SCOPE.")
+        self.db, self.prefix = db, f"tasks/{scope}/"
+
+    def __getattr__(self, name):
+        return getattr(self.db, name)
+
+    def save(self, token, pid, path, content):
+        return self.db.save(token, pid, self.prefix + path, content)
+
+    def rows(self, table, token, **filters):
+        if table not in {"study_results", "study_result_history"}:
+            yield from self.db.rows(table, token, **filters)
+            return
+        match = filters.get("path", "")
+        if match.startswith("in.("):
+            filters["path"] = "in.(" + ",".join(self.prefix + p for p in match[4:-1].split(",")) + ")"
+        elif match.startswith("eq."):
+            filters["path"] = "eq." + self.prefix + match[3:]
+        else:
+            filters["path"] = "like." + self.prefix + "*"
+        for row in self.db.rows(table, token, **filters):
+            row = dict(row)
+            if "path" in row:
+                row["path"] = row["path"].removeprefix(self.prefix)
+            yield row
+
+
 class StudyServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -96,7 +127,10 @@ class StudyServer(ThreadingHTTPServer):
         self.origin = origin
         self.host = urlsplit(origin).netloc
         self.db = db
-        self.spec = study.spec(task, tasks_dir)
+        spec_file = os.environ.get("STUDY_SPEC_FILE")
+        self.spec = json.loads(Path(spec_file).read_text()) if spec_file else study.spec(task, tasks_dir)
+        if self.spec.get("task") != task:
+            raise ValueError("STUDY_TASK must match the private study specification.")
         self.agents = agents
         self.devices = devices
         self.local_connector = (sys.platform == "darwin" and self.server_address[0] == "127.0.0.1"
@@ -305,6 +339,9 @@ class StudyHandler(BaseHTTPRequestHandler):
         pid = member["pid"]
         if body.get("pid", pid) != pid:
             raise RequestError(403, "This account is assigned to another participant ID.")
+        if (isinstance(db, ScopedResults) and path in {"/api/study/save", "/api/study/audio", "/api/study/submit"}
+                and body.get("task") != self.server.spec["task"]):
+            raise RequestError(409, "The study task changed. Refresh the page before saving.")
         if self.server.devices and path.startswith("/api/study/connection/"):
             owner = member["user_id"]
             devices = self.server.devices
@@ -346,7 +383,7 @@ class StudyHandler(BaseHTTPRequestHandler):
             return self.json(200, {"saved": {"path": file_path}})
         if path == "/api/study/submit":
             day = body.get("day")
-            if type(day) is not int or day not in (1, 2):
+            if type(day) is not int or day not in range(1, self.server.spec.get("study_days", 2) + 1):
                 raise RequestError(400, "Choose study day 1 or 2.")
             file_path = f"day{day}/submission.json"
             rows = db.rows("study_results", token, pid=f"eq.{pid}", select="path,content",
@@ -387,6 +424,10 @@ def main():
         agents.append({"name": name, "channel": channel})
     try:
         db = Supabase(os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_PUBLISHABLE_KEY", ""))
+        if os.environ.get("STUDY_SPEC_FILE") and not os.environ.get("STUDY_RESULT_SCOPE"):
+            raise ValueError("Set STUDY_RESULT_SCOPE when loading a private study file to preserve earlier results.")
+        if os.environ.get("STUDY_RESULT_SCOPE"):
+            db = ScopedResults(db, os.environ["STUDY_RESULT_SCOPE"])
         server = StudyServer(origin, (args.bind, args.port), db, args.tasks_dir, args.task, agents, study_devices.Devices(args.connector_db))
     except (ValueError, study.StudyError) as error:
         parser.error(str(error))

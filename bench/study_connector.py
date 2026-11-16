@@ -373,20 +373,26 @@ def main():
 
 
 def loop(origin, path):
-    future = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    # Different agents can run together; a single agent remains serialized.
+    futures = {}
+    with ThreadPoolExecutor(max_workers=2) as executor:
         while True:
-            if future is not None and future.done():
-                try:
-                    future.result()
-                except Exception as exc:
-                    print(f"Study task stopped: {exc}", file=sys.stderr, flush=True)
-                future = None
+            for future in list(futures):
+                if future.done():
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        print(f"Study task stopped: {exc}", file=sys.stderr, flush=True)
+                    del futures[future]
             credential = json.loads(path.read_text())["credential"]
             try:
-                result = request(origin, "poll", {"agents": agent_channels(), "busy": future is not None}, credential)
+                result = request(origin, "poll", {
+                    "agents": agent_channels(), "busy": len(futures) >= 2 or any(j["kind"] != "run" for j in futures.values()),
+                    "busy_agents": [j["agent"] for j in futures.values()],
+                }, credential)
                 if result["job"]:
-                    future = executor.submit(run_job, origin, credential, result["job"])
+                    job = result["job"]
+                    futures[executor.submit(run_job, origin, credential, job)] = job
             except ConnectorError as error:
                 if error.status == 401:
                     if json.loads(path.read_text())["credential"] == credential:

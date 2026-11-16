@@ -200,8 +200,13 @@ class Devices:
                            (now, json.dumps(agents), json.dumps(verified), device_id))
                 if body.get("busy") is True:
                     return {"job": None}
-                job = db.execute("""select * from jobs where device = ? and state = 'queued'
-                                    order by created limit 1""", (device_id,)).fetchone()
+                busy_agents = body.get("busy_agents", [])
+                if not isinstance(busy_agents, list) or not all(isinstance(a, str) for a in busy_agents):
+                    raise DeviceError(400, "Invalid active agent list.")
+                candidates = db.execute("""select * from jobs where device = ? and state = 'queued'
+                                           order by created""", (device_id,)).fetchall()
+                job = next((j for j in candidates if j["agent"] not in busy_agents
+                            and (not busy_agents or j["kind"] == "run")), None)
                 if job is None:
                     return {"job": None}
                 db.execute("update jobs set state = 'running', updated = ? where id = ?", (now, job["id"]))

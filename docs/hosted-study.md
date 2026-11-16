@@ -126,3 +126,32 @@ set `STUDY_TASKS_DIR` and `STUDY_TASK` accordingly.
 For a smoke test, complete a fictional study day, click **Submit results**, and
 reload the page. Sign in separately as a researcher and confirm the participant
 shows **Submitted day 1** and that the saved answers and conversation are readable.
+
+### Private, single-session task deployment
+
+The hosted renderer supports `chat_mode: "together"`, `card_in_chat`,
+`round_offset`, `step_prefix`, scale `extra` choices, configurable handoff
+triggers, and `study_days: 1`. Two agents have separate timers and handoffs;
+opening jobs can be queued together. The updated Mac connector processes two
+agents concurrently while serializing each agent. Existing connector installs
+must be updated for parallel execution.
+
+Keep private task specifications outside this public repository. To activate one:
+
+1. Apply `supabase/migrations/202611160001_task_scopes.sql` in Supabase.
+2. Add the private specification as a Render Secret File named `study.json`.
+3. Set `STUDY_SPEC_FILE=/etc/secrets/study.json`, `STUDY_TASK` to the exact `task`
+   in that file, and `STUDY_RESULT_SCOPE` to a new stable slug for this protocol.
+4. Deploy and verify participant login, the interview, two-agent chat, surveys,
+   submission and the research view before inviting participants.
+
+Scoped results use `tasks/<scope>/...` in Supabase. Earlier demo results remain
+untouched. The active research view shows the active scope; earlier results
+remain in Supabase under their original paths. Old browser tabs cannot save to
+an activated scoped task until refreshed. Hosted participants cannot use the
+local console's `browse=1` shortcut to bypass required answers.
+
+The website sends only participant messages and fixed task prompts to agents.
+It does not automatically grant agents email/calendar access, run a live AI
+interviewer, or perform the research team's rubric coding. Those remain separate
+study operations. Do not import pilot participant records as new responses.

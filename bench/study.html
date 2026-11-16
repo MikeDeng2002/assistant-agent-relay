@@ -131,6 +131,14 @@ h3 { font-size: 15px; margin: 0 0 8px; }
 .opt:hover { border-color: var(--faint); }
 .opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .opt .t { font-weight: 600; }
+.review-q { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.review-q:last-child { border-bottom: 0; }
+.review-q .qt { font-weight: 600; margin-bottom: 8px; }
+.review-q .opt, .review-q .scale button, .review-q .chip { cursor: default; }
+.review-q .opt[aria-pressed="false"], .review-q .scale button[aria-pressed="false"], .review-q .chip[aria-pressed="false"] { opacity: .55; }
+.review-q .mine { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.review-q .ans { white-space: pre-wrap; background: var(--surface-2, var(--bg)); border-radius: 8px; padding: 8px 12px; }
+.review-q .none { color: var(--faint); font-style: italic; }
 .opt .d { color: var(--muted); font-size: 13px; }
 .opt .ex { color: var(--faint); font-size: 13px; font-style: italic; margin-top: 4px; }
 .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -194,6 +202,12 @@ table.grid input, table.grid select { padding: 6px 8px; }
 .compose { border-top: 1px solid var(--border); padding: 12px 16px; display: grid; gap: 8px; }
 .compose textarea { min-height: 70px; }
 .side .panel { padding: 16px; }
+.duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.duo > .panel { margin: 0; }
+.duo .chatpane { height: calc(100vh - 360px); min-height: 380px; }
+.duo .colfoot { border-top: 1px solid var(--border); padding: 10px 16px; display: grid; gap: 8px; font-size: 13px; }
+.together-compose { margin-top: 16px; display: grid; gap: 8px; }
+.together-compose .to { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .side h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .side ul { padding-left: 18px; margin: 0; font-size: 13px; color: var(--muted); }
 .side li + li { margin-top: 4px; }
@@ -205,7 +219,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .files { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
 @media (max-width: 960px) {
   .layout { gap: 22px; padding-inline: 21px; grid-template-columns: 208px minmax(0, 1fr); }
-  .chatgrid { grid-template-columns: minmax(0, 1fr); }
+  .chatgrid, .duo { grid-template-columns: minmax(0, 1fr); }
   .budget { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
@@ -310,6 +324,9 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   let connection = null;
   const usesConnector = () => HOSTED && connectorEnabled && !S?.session?.manual_connection;
   const ONLINE = HOSTED || (typeof TOKEN === 'string' && !!TOKEN);
+  const REVIEW = TOKEN === 'review';
+  const BROWSE = !HOSTED && new URLSearchParams(location.search).get('browse') === '1';
+  const SINGLE_SESSION = () => spec?.study_days === 1;
   const POLL_MS = 2000;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -373,7 +390,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   async function saveFile(path, payload) {
     if (!S) return;
     if (HOSTED) {
-      const body = JSON.parse(JSON.stringify({ pid: S.pid, path, ...payload }));
+      const body = JSON.parse(JSON.stringify({ pid: S.pid, task: S.task, path, ...payload }));
       if (body.append) body.append = body.append.map(record => ({ ...record, event_id: crypto.randomUUID() }));
       return cloudSave(body.append && body.append.length ? body.append[0].event_id : path, body);
     }
@@ -381,7 +398,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (!ONLINE) { saveErr = 'offline'; showSaved(); return; }
     saving++; showSaved();
     try {
-      await api('/api/study/save', { pid: S.pid, path, ...payload });
+      await api('/api/study/save', { pid: S.pid, task: S.task, path, ...payload });
       saveErr = ''; S.savedAt = new Date().toISOString();
     } catch (e) { saveErr = e.message; }
     saving--; showSaved();
@@ -407,7 +424,11 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   const order = () => S.day === 1 ? S.session.day1_order : S.session.day2_order;
   const labelOf = agent => { const bl = (S.session.blind_labels || {})[String(S.day)] || {}; return bl.A === agent ? 'A' : bl.B === agent ? 'B' : '?'; };
   const agentOfLabel = l => ((S.session.blind_labels || {})[String(S.day)] || {})[l];
-  const stepName = (kind, n) => `DAY ${S.day} ${kind}${n != null ? ' ' + n : ''}`;
+  const ROUND_OFF = () => (spec && spec.round_offset) || 0;  // 1 when the opening counts as round 1
+  const stepName = (kind, n) => `${(spec && spec.step_prefix) || 'DAY ' + S.day} ${kind}${n != null ? ' ' + (kind === 'ROUND' ? n + ROUND_OFF() : n) : ''}`;
+  // The handoff's trigger names, from the spec's limits.triggers when it has them
+  const TRIG = k => ((spec.limits || {}).triggers || {})[k] || { turns: 'ten_turns', minute: 'minute_25', ready: 'both_ready' }[k];
+  const TIE = () => (spec.words || {}).tie || 'Tie';
 
   function effectiveCard() { const A = S.pre.answers; return A.card === 'none' ? A.closest_card : A.card; }
 
@@ -444,7 +465,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       case 'cards': return v === 'none' ? (q.none_option || 'None') : (cardOf(v) || {}).title || v;
       case 'multi': return v.map(x => optLabel(q, x)).join(', ');
       case 'confirm': return q.confirm || 'Yes';
-      case 'scale7': return v === 'unable_to_judge' ? 'Unable to judge' : `${v} of 7`;
+      case 'scale7': return v === 'unable_to_judge' ? 'Unable to judge' : typeof v === 'string' ? optLabel({ options: q.extra }, v) : `${v} of 7`;
       case 'people': return v.filter(p => p.alias).map(p => `${p.alias} (${[p.role, p.confirmed ? 'confirmed' : 'not confirmed yet', p.relation].filter(Boolean).join(', ')})`).join('; ');
       case 'budget': {
         const cur = v.currency || 'USD', sym = cur === 'USD' ? '$' : cur + ' ';
@@ -459,7 +480,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   // Pre-task: which questions the participant's answers lead to, and what each card field says
   function preCtx(withTop = true) {
     const A = S.pre.answers, card = effectiveCard(), c = cardOf(card);
-    const X = { card, card_title: c ? c.title : '', card_title_lower: c ? c.title.toLowerCase() : 'gathering' };
+    const X = { card, card_title: c ? c.title : '', card_title_lower: c ? c.title.toLowerCase() : ((spec.words || {}).card_fallback || 'gathering') };
     if (withTop && A.top_pref) { X.topStatus = fieldStatus(A.top_pref); X.top_pref_label = topPrefLabel(A.top_pref); }
     return X;
   }
@@ -494,14 +515,18 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   // MARK: Stages
 
+  // A task whose study.json says "chat_mode": "together" chats with both agents at once, side by side, as the agent console does.
+  const TOGETHER = () => !!spec && spec.chat_mode === 'together' && !!S && !!S.session && (order() || []).length > 1;
   function stages() {
     const list = [{ key: 'setup', title: 'Session', group: 'Start' }];
     if (!S.session || !S.session.agents) return list;
     if (S.day === 1) spec.pre.forEach(st => list.push({ key: 'pre:' + st.id, title: st.title, group: 'Pre-task interview' }));
     else list.push({ key: 'reread', title: 'Anything changed?', group: 'Pre-task' });
+    const together = TOGETHER();
+    if (together) list.push({ key: 'chat:0', title: 'Chat with both agents', group: 'Task' });
     order().forEach((a, i) => {
       const n = order().length > 1 ? `Agent ${labelOf(a)}` : a.charAt(0).toUpperCase() + a.slice(1);
-      list.push({ key: 'chat:' + (i + 1), title: `Chat with ${n}`, group: 'Task' });
+      if (!together) list.push({ key: 'chat:' + (i + 1), title: `Chat with ${n}`, group: 'Task' });
       list.push({ key: 'after:' + (i + 1), title: `About ${n}`, group: 'Task' });
     });
     if (order().length > 1) list.push({ key: 'compare', title: 'Compare A and B', group: 'Post-task' });
@@ -514,7 +539,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   const isDone = key => key === 'setup' ? !!(S.session && S.session.agents && (S.session.blind_labels || {})[String(S.day)]) : key.startsWith('pre:') ? !!(S.pre.done || {})[key] : !!D().done[key];
   function reachable(key) {
     const list = stages(); const i = list.findIndex(s => s.key === key);
-    return i <= 0 || list.slice(0, i).every(s => isDone(s.key));
+    return BROWSE || i <= 0 || list.slice(0, i).every(s => isDone(s.key));
   }
   function go(key) { S.stage = key; stopPollingUnlessNeeded(); saveProgress(); render(); window.scrollTo(0, 0); }
   function completeStage(key) {
@@ -573,6 +598,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (key === 'setup') return renderSetup(m);
     if (key.startsWith('pre:')) return renderPre(m, key.slice(4));
     if (key === 'reread') return renderReread(m);
+    if (key === 'chat:0') return renderTogether(m);
     if (key.startsWith('chat:')) return renderChat(m, +key.slice(5));
     if (key.startsWith('after:')) return renderAfter(m, +key.slice(6));
     if (key === 'compare') return renderCompare(m);
@@ -617,6 +643,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
     if (ONLINE && !HOSTED) { try { const r = await api('/api/study/load?pid=' + encodeURIComponent(pid)); saved = (r.files['progress.json'] || {}).state || null; } catch (e) {} }
     if (!HOSTED && !saved) saved = local.get(`${pid}.progress`);
+    if (saved && saved.task !== spec.task) throw new Error('This saved session belongs to a different task. Contact the study team.');
     S = saved || { pid, task: spec.task, day: 1, stage: 'setup', session: { participant_id: pid }, pre: { answers: {}, done: {} }, d: {}, cursor: {} };
     S.cursor = S.cursor || {};
     render();
@@ -631,11 +658,11 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     m.innerHTML = `<div class="session-heading">
       <div class="kicker">${esc(spec.title || S.task)}</div>
       <h2>Set up the session</h2>
-      <p class="help">${names.length === 1 ? 'Choose the study day to continue with your agent.' : 'Two agents plan the same gathering, one at a time. The order reverses on day 2.'}</p>
+      <p class="help">${names.length === 1 ? 'Choose the study day to continue with your agent.' : (spec.chat_mode === 'together' ? 'Two agents plan the same gathering side by side in one session.' : 'Two agents plan the same gathering, one at a time. The order reverses on day 2.')}</p>
     </div>
     <div class="panel setup-panel">
       <div class="setup-fields">
-        <label>Day
+        <label ${SINGLE_SESSION() ? 'hidden' : ''}>Day
           <select id="s-day"><option value="1" ${S.day === 1 ? 'selected' : ''}>Day 1</option><option value="2" ${S.day === 2 ? 'selected' : ''} ${locked ? '' : 'disabled'}>Day 2${locked ? '' : ' (after day 1)'}</option></select></label>
         <label>Agents
           <select id="s-n"><option value="2">Two agents</option><option value="1">One agent only</option></select></label>
@@ -643,7 +670,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           <select id="s-a1">${names.map(n => `<option ${pick[0] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
         <label id="s-a2-wrap">Agent 2
           <select id="s-a2">${names.map(n => `<option ${pick[1] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
-        <label id="s-first-wrap">Day 1: who goes first
+        <label id="s-first-wrap">${spec.chat_mode === 'together' ? 'Who appears on the left' : 'Day 1: who goes first'}
           <select id="s-first"><option value="0">Agent 1</option><option value="1">Agent 2</option></select></label>
       </div>
       <p class="small muted" id="s-note"></p>
@@ -666,7 +693,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); if ($('setup-connector-2')) $('setup-connector-2').hidden = one(); };
     const note = () => { showN(); if (one()) { $('s-note').textContent = `Only ${$('s-a1').value}: one chat a day, no A/B comparison.`; return; } const d = +$('s-day').value; const a = [$('s-a1').value, $('s-a2').value]; const f = +$('s-first').value;
       const d1 = [a[f], a[1 - f]];
-      $('s-note').textContent = d === 1 ? `Day 1 order: ${d1.join(' then ')}. ${S.pid} is ${pidNum % 2 ? 'odd' : 'even'}, so the suggestion is Agent ${pidNum % 2 ? 1 : 2} first.` : `Day 2 reverses day 1: ${(s.day1_order || d1).slice().reverse().join(' then ')}.`; };
+      $('s-note').textContent = d === 1 ? `${spec.chat_mode === 'together' ? 'Left / right' : 'Day 1 order'}: ${d1.join(spec.chat_mode === 'together' ? ' / ' : ' then ')}. ${S.pid} is ${pidNum % 2 ? 'odd' : 'even'}, so the suggestion is Agent ${pidNum % 2 ? 1 : 2} first.` : `Day 2 reverses day 1: ${(s.day1_order || d1).slice().reverse().join(' then ')}.`; };
     ['s-day', 's-n', 's-a1', 's-a2', 's-first'].forEach(id => $(id).onchange = note); note();
     if (s.agents && locked) { $('s-a1').disabled = $('s-a2').disabled = $('s-first').disabled = $('s-n').disabled = true; }
     if (connectorEnabled) {
@@ -705,11 +732,46 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   // MARK: Questionnaires
 
+  // Every answered question of a step on one page. A choice question shows all its options, the chosen one marked.
+  function answersHTML(list, A, X) {
+    const mine = on => on ? '<span class="mine">✓ your answer</span>' : '';
+    const opt = (label, on, extra = '') => `<div class="opt" aria-pressed="${on}"><span class="t">${esc(label)}</span>${extra}${mine(on)}</div>`;
+    return list.filter(q => cond(q.when, A, X) && !['info', 'lock', 'readback', 'handoffs'].includes(q.type)).map(q => {
+      const v = A[q.id];
+      let h;
+      switch (q.type) {
+        case 'single': case 'abtie': case 'confirm': {
+          const opts = q.type === 'abtie' ? [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'tie', label: TIE() }]
+            : q.type === 'confirm' ? [{ value: 'yes', label: q.confirm || 'Yes' }] : q.options;
+          h = `<div class="opts">${opts.map(o => opt(o.label, v === o.value)).join('')}</div>`; break;
+        }
+        case 'multi': h = `<div class="opts">${q.options.map(o => opt(o.label, (v || []).includes(o.value))).join('')}</div>`; break;
+        case 'cards':
+          h = `<div class="opts">${spec.cards.map((c, n) => opt(`Card ${n + 1}: ${c.title}`, v === c.id, `<span class="d">${esc(c.covers)}</span>`)).join('')}${q.none_option ? opt(q.none_option, v === 'none') : ''}</div>`; break;
+        case 'scale7':
+          h = `<div class="scale">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button disabled aria-pressed="${v === n}">${n}</button>`).join('')}</div>
+            <div class="scale-ends"><span>1 · ${esc(q.low)}</span>${q.mid ? `<span>4 · ${esc(q.mid)}</span>` : '<span>4 · midpoint</span>'}<span>7 · ${esc(q.high)}</span></div>
+            <div class="chips" style="margin-top:8px">${(q.extra || []).map(o => `<span class="chip" aria-pressed="${v === o.value}">${esc(o.label)}</span>`).join('')}<span class="chip" aria-pressed="${v === 'unable_to_judge'}">Unable to judge</span></div>`; break;
+        default: {
+          const t = fmt(q, v) || (A[q.id + '__status'] === 'dont_know' ? 'Don’t know' : '');
+          h = t ? `<div class="ans">${esc(t)}</div>` : '<div class="none">No answer</div>';
+        }
+      }
+      if (q.status && A[q.id + '__status'] === 'dont_know' && filled(v)) h += '<div class="small muted">Marked “don’t know”</div>';
+      if (A[q.id + '__probe']) h += `<div class="small muted" style="margin-top:6px">Follow-up: ${esc(A[q.id + '__probe'])}</div>`;
+      return `<div class="review-q"><div class="qt">${esc(qText(q, A, X))}</div>${h}</div>`;
+    }).join('');
+  }
+
   // One question at a time. Branching: each question's `when` is checked against the answers so far.
   // A short answer to a question with a probe gets the probe once; "I don't know" is an answer.
   function renderQuestions(m, o) {
     // o: {scope, title, kicker, intro, list, A, X, readOnly, onDone(), doneLabel, audioPrefix}
     o.token = (o.token || 0) + 1;
+    if (REVIEW) {
+      m.innerHTML = `<div class="panel"><div class="kicker">${esc(o.kicker)}</div>${answersHTML(o.list, o.A, o.X())}</div>${o.footer ? o.footer() : ''}`;
+      return;
+    }
     const visible = () => o.list.filter(q => cond(q.when, o.A, o.X()));
     let vis = visible();
     let cur = S.cursor[o.scope];
@@ -719,6 +781,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const text = qText(q, A, X);
     const pct = Math.round(100 * i / vis.length);
     m.innerHTML = `<div class="panel">
+      ${BROWSE ? '<p class="banner">Browse mode: answers are optional and every step in the left list is open. Use a throwaway participant ID.</p>' : ''}
       <div class="kicker">${esc(o.kicker)} · ${i + 1} of ${vis.length}${o.minutes ? ` · about ${o.minutes} min for this part` : ''}</div>
       <div class="progress"><div style="width:${pct}%"></div></div>
       ${o.intro && i === 0 ? `<p class="help">${esc(o.intro)}</p>` : ''}
@@ -743,7 +806,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       else { saveProgress(); o.onDone(); }
     };
     const next = () => {
-      if (o.readOnly) return advance();
+      if (o.readOnly || BROWSE) return advance();
       const v = A[q.id], st = A[q.id + '__status'];
       const excused = ['dont_know', 'no_preference', 'open'].includes(st);
       if (!q.optional && !excused && !['info', 'handoffs', 'readback'].includes(q.type) && !answeredEnough(q, v)) {
@@ -785,7 +848,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         break;
       }
       case 'single': case 'abtie': {
-        const opts = q.type === 'abtie' ? [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'tie', label: 'Tie' }] : q.options;
+        const opts = q.type === 'abtie' ? [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'tie', label: TIE() }] : q.options;
         h = `<div class="opts" ${q.type === 'abtie' ? 'style="grid-template-columns:repeat(3,1fr)"' : ''}>${opts.map(op => `<button class="opt" data-v="${esc(op.value)}" aria-pressed="${A[q.id] === op.value}" ${ro}><span class="t">${esc(op.label)}</span></button>`).join('')}</div>`;
         break;
       }
@@ -807,7 +870,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         const v = A[q.id];
         h = `<div class="scale">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button data-v="${n}" aria-pressed="${v === n}" ${ro}>${n}</button>`).join('')}</div>
           <div class="scale-ends"><span>1 · ${esc(q.low)}</span>${q.mid ? `<span>4 · ${esc(q.mid)}</span>` : '<span>4 · midpoint</span>'}<span>7 · ${esc(q.high)}</span></div>
-          <div class="chips" style="margin-top:10px"><button class="chip" data-v="unable_to_judge" aria-pressed="${v === 'unable_to_judge'}" ${ro}>Unable to judge</button></div>`;
+          <div class="chips" style="margin-top:10px">${(q.extra || []).map(o => `<button class="chip" data-v="${esc(o.value)}" aria-pressed="${v === o.value}" ${ro}>${esc(o.label)}</button>`).join('')}<button class="chip" data-v="unable_to_judge" aria-pressed="${v === 'unable_to_judge'}" ${ro}>Unable to judge</button></div>`;
         break;
       }
       case 'people': {
@@ -873,7 +936,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
     // Wire it
     body.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
-      let v = b.dataset.v; if (q.type === 'scale7' && v !== 'unable_to_judge') v = +v;
+      let v = b.dataset.v; if (q.type === 'scale7' && /^[1-7]$/.test(v)) v = +v;
       set(v, true); autoNext();
     });
     body.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
@@ -971,7 +1034,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (!ONLINE) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
       const fr = new FileReader();
-      fr.onload = () => api('/api/study/audio', { pid: S.pid, name: name.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80), mime: blob.type, b64: String(fr.result).split(',')[1] })
+      fr.onload = () => api('/api/study/audio', { pid: S.pid, task: S.task, name: name.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80), mime: blob.type, b64: String(fr.result).split(',')[1] })
         .then(r => resolve(r.saved.path), reject);
       fr.onerror = () => reject(new Error('couldn’t read the recording'));
       fr.readAsDataURL(blob);
@@ -996,7 +1059,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const qs = st.questions.filter(q => cond(q.when, A, X) && !['lock', 'readback', 'info'].includes(q.type));
     m.innerHTML = `<div class="panel"><div class="kicker">Pre-task interview · ${esc(st.title)}</div><h2>Locked ${esc(clock(S.pre.locked_at))}</h2>
       <p class="help">The card is locked, so these answers can’t change here. A real change later is recorded at the start of day 2, and it goes to the change log.</p>
-      <div class="cardview">${qs.map(q => `<div class="f"><div class="k">${esc(qText(q, A, X))}</div><div class="v">${esc(fmt(q, A[q.id]) || (A[q.id + '__status'] === 'dont_know' ? 'Don’t know' : '—'))}${A[q.id + '__probe'] ? `\n↳ ${esc(A[q.id + '__probe'])}` : ''}</div><div></div></div>`).join('')}</div>
+      ${answersHTML(qs, A, X)}
       <div class="nav"><span class="spacer"></span><button class="btn primary" id="nx">Next</button></div></div>`;
     $('nx').onclick = () => completeStage('pre:' + st.id);
   }
@@ -1051,7 +1114,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const flags = flagsNow(), dk = (spec.fields || []).filter(f => f.factor && fieldStatus(f.id) === 'dont_know');
     return `${dk.length ? `<p class="banner">${dk.length} of the seven factors are “don’t know”: ${esc(dk.map(f => f.label.split(':')[0]).join(', '))}. ${dk.length >= 3 ? 'That will be flagged. ' : ''}They stay “don’t know” with every agent. Go back to answer them if you can.</p>` : '<p class="banner ok">Every factor has an answer.</p>'}
       ${flags.includes('short_description') ? '<p class="banner">Your description of the gathering is under one sentence. That will be flagged.</p>' : ''}
-      <p class="help">Once it's locked, you won't see the card again while you chat with the agents. Answer them the way you would in real life.</p>
+      <p class="help">${spec.card_in_chat ? "Once it's locked, the card stays open above the two chats. Answer both agents from it." : "Once it's locked, you won't see the card again while you chat with the agents. Answer them the way you would in real life."}</p>
       <div class="nav"><button class="btn primary" id="lock-btn">Lock my card</button></div>`;
   }
 
@@ -1065,9 +1128,9 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
     const unplaced = sources.filter(s => !s.field);
     if (unplaced.length) fields.card_details.agent_sources.push(...unplaced.map(s => ({ agent: s.agent || 'either', source: s.source, access_verified: s.access_verified === 'yes', detail: s.detail })));
-    fields.guests.people = (A.guests || []).filter(p => p.alias).map(p => ({ alias: p.alias, role: p.role, confirmed: !!p.confirmed, relation: p.relation || '' }));
+    if (fields.guests) fields.guests.people = (A.guests || []).filter(p => p.alias).map(p => ({ alias: p.alias, role: p.role, confirmed: !!p.confirmed, relation: p.relation || '' }));
     const b = A.budget || {};
-    Object.assign(fields.budget, { amount_low: b.amount_low === '' ? null : b.amount_low ?? null, amount_high: b.amount_high === '' ? null : b.amount_high ?? null, per: b.per || null, firm_limit: b.firm_limit === '' ? null : b.firm_limit ?? null, currency: b.currency || 'USD' });
+    if (fields.budget) Object.assign(fields.budget, { amount_low: b.amount_low === '' ? null : b.amount_low ?? null, amount_high: b.amount_high === '' ? null : b.amount_high ?? null, per: b.per || null, firm_limit: b.firm_limit === '' ? null : b.firm_limit ?? null, currency: b.currency || 'USD' });
     fields.card_details.answers = Object.fromEntries(visiblePre('cardq').filter(q => q.field === 'card_details' && filled(A[q.id])).map(q => [qText(q, A, X), fmt(q, A[q.id])]));
     const tradeoffs = [];
     if (A.top_pref) {
@@ -1079,6 +1142,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       description: [A.description, A.description__probe].filter(Boolean).join('\n'),
       dates: A.timing || null, time_zone: A.time_zone || S.session.time_zone, locked_at: null,
       fields, priorities: A.priorities || '', boundaries: A.boundaries || '', tradeoffs,
+      ...(A.control !== undefined ? { control_wanted: { level: A.control, decisions: A.control_decisions || '' } } : {}),
       corrections: A.corrections || '', overrides_at_readback: A.__override || {},
     };
   }
@@ -1128,8 +1192,8 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   // Day 2 starts without the card: the participant plans from what they know, as on day 1. A real change goes to the log.
   function renderReread(m) {
-    m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day} · Pre-task</div><h2>Has anything about the dinner changed?</h2>
-      <p class="help">Day 2 is the same dinner, opening, handoff and time limit. You won't see your card while you chat; answer the agents as you would in real life. If something has really changed since day 1, such as a friend who can't come or a new date, write it here. It goes to the log beside the locked card.</p>
+    m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day} · Pre-task</div><h2>${esc((spec.words || {}).day2_title || 'Has anything about the dinner changed?')}</h2>
+      <p class="help">${esc((spec.words || {}).day2_help || "Day 2 is the same dinner, opening, handoff and time limit. You won't see your card while you chat; answer the agents as you would in real life. If something has really changed since day 1, such as a friend who can't come or a new date, write it here. It goes to the log beside the locked card.")}</p>
       <textarea id="chg" style="min-height:80px" placeholder="What changed, and why (leave empty if nothing did)"></textarea>
       <div class="small muted" id="chg-list" style="margin-top:6px"></div>
       <div class="nav"><button class="btn" id="chg-add">Record this change</button><span class="spacer"></span><button class="btn primary" id="nx">Start day 2</button></div></div>`;
@@ -1154,7 +1218,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     return e.sent_at || (j && (j.sent_at || (!HOSTED && j.started_at))) || null;
   }
   function compose(kind) {
-    const c = cardOf(S.card.card), t = spec.messages[kind];
+    const c = cardOf(S.card?.card || effectiveCard()) || spec.cards[0], t = spec.messages[kind];
     return t.replace('{first}', c.first).replace('{last}', c.last);
   }
 
@@ -1270,7 +1334,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         <div class="panel"><h3>Chat rules</h3><ul>${spec.chat_rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>
         <div class="panel"><h3>Notes</h3>
           <div class="row" style="gap:6px;margin-bottom:8px">
-            <button class="btn small" id="n-rec" ${C.first_recommendation ? 'disabled' : ''}>${C.first_recommendation ? `Restaurants named · round ${C.first_recommendation.round}` : 'It just named restaurants'}</button>
+            <button class="btn small" id="n-rec" ${C.first_recommendation ? 'disabled' : ''}>${C.first_recommendation ? `${esc((spec.words || {}).named || 'Restaurants named')} · round ${C.first_recommendation.round}` : esc((spec.words || {}).named_button || 'It just named restaurants')}</button>
             <button class="btn small" id="n-ready" ${C.ready_first ? 'disabled' : ''}>${C.ready_first ? `Ready first: ${C.ready_first.who}` : 'It says the plan is ready'}</button>
           </div>
           <div class="row" style="gap:6px"><select id="n-type" style="width:auto"><option value="asked">It asked</option><option value="volunteered">It volunteered</option><option value="corrected">I corrected</option><option value="changed">I changed my mind</option></select>
@@ -1328,13 +1392,13 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(); };
       $('c-hand').onclick = async () => {
         const mins = minutesSince(openingAt(C));
-        const trigger = C.rounds >= lim.turns ? 'ten_turns' : mins >= lim.handoff_minute ? 'minute_25' : 'both_ready';
-        if (trigger === 'both_ready' && !confirm('Send the handoff now? Do this when you and the agent are both ready.')) return;
+        const trigger = C.rounds >= lim.turns ? TRIG('turns') : mins >= lim.handoff_minute ? TRIG('minute') : TRIG('ready');
+        if (trigger === TRIG('ready') && !confirm('Send the handoff now? Do this when you and the agent are both ready.')) return;
         $('c-hand').disabled = true;
         try {
           if (!C.ready_first) C.ready_first = { who: 'participant', round: C.rounds, at: nowIso() };
           const e = await sendToAgent(agent, compose('handoff'), stepName('HANDOFF'), { round: null });
-          C.handoff = { sent_at: null, job: e.job, trigger, reply_at: null, partial: false };
+          C.handoff = { sent_at: null, job: e.job, trigger, rounds: C.rounds + 1, reply_at: null, partial: false };
           saveProgress(); renderCompose(pos); updateChat(pos);
         } catch (e) { $('c-err').textContent = e.message; $('c-hand').disabled = false; }
       };
@@ -1342,7 +1406,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
     if (phase === 'handoff') {
       el.innerHTML = `<div class="row"><span class="small muted" id="c-wait">Waiting for the agent’s complete plan…</span><span class="spacer"></span>
-        <button class="btn" id="c-partial" hidden>Use what’s there (30 minutes are up)</button>
+        <button class="btn" id="c-partial" hidden>Use what’s there (${lim.total_minute} minutes are up)</button>
         <button class="btn primary" id="c-done" disabled>The plan is in: finish this chat</button></div>
         <details><summary>What had the agent learned by the handoff? (optional note)</summary><textarea id="c-learned" style="min-height:70px;margin-top:6px">${esc(C.learned_before_handoff)}</textarea></details>
         <div class="err" id="c-err"></div>`;
@@ -1387,7 +1451,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const phase = chatPhase(C);
     if (phase === 'rounds') {
       const hand = $('c-hand');
-      const due = C.rounds >= lim.turns ? 'That was your 10th turn: send the handoff now.' : mins >= lim.handoff_minute ? `Minute ${lim.handoff_minute}: send the handoff now.` : '';
+      const due = C.rounds >= lim.turns ? `Round ${lim.turns + ROUND_OFF()}: send the handoff now.` : mins >= lim.handoff_minute ? `Minute ${lim.handoff_minute}: send the handoff now.` : '';
       const err = $('c-err');
       if (hand) hand.classList.toggle('danger', !!due);
       if (err && due && !err.textContent) err.textContent = due;
@@ -1420,7 +1484,11 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     return Promise.all([saveFile(`${base}/conversation.jsonl`, { text: recs.map(r => JSON.stringify(r)).join('\n') + '\n' }), saveFile(`${base}/conversation.md`, { text: md })]);
   }
   async function finishChat(pos) {
-    const agent = order()[pos - 1], C = chatOf(agent);
+    await finishAgent(order()[pos - 1]);
+    completeStage('chat:' + pos);
+  }
+  async function finishAgent(agent) {
+    const C = chatOf(agent);
     stopMic();
     const t = transcript(agent);
     C.handoff_text = t.filter(x => x.role === 'agent' && x.step === stepName('HANDOFF')).map(x => x.text).join('\n\n');
@@ -1432,7 +1500,194 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       learned_before_handoff: C.learned_before_handoff, turns: C.rounds, recorded_by: 'participant' };
     await Promise.all([saveConversation(agent), saveFile(`day${S.day}/${agent}/chat-notes.json`, { data: notes })]);
     saveProgress(true);
-    completeStage('chat:' + pos);
+  }
+
+  // MARK: The chat with both agents at once
+
+  // One column per agent, each with its own turns, timer, notes and handoff, and one box below that sends to both or to one.
+  function renderTogether(m) {
+    ensurePolling();
+    const ags = order(), named = (spec.words || {}).named || 'Restaurants named', namedBtn = (spec.words || {}).named_button || 'It just named restaurants';
+    const col = (a, i) => {
+      const C = chatOf(a);
+      return `<div class="panel chatpane">
+        <div class="chathead"><div><div class="kicker" style="margin:0">Day ${S.day} · column ${i + 1}</div><strong>Agent ${labelOf(a)}</strong> <span class="small muted">(${esc(a)})</span></div>
+          <span class="spacer"></span><span class="turns" id="turns-${i}"></span><span class="timer" id="timer-${i}">--:--</span></div>
+        <div class="msgs" id="msgs-${i}"></div>
+        <div class="colfoot">
+          <div class="row" style="gap:6px">
+            <button class="btn small" data-rec="${i}" ${C.first_recommendation ? 'disabled' : ''}>${C.first_recommendation ? `${esc(named)} · round ${C.first_recommendation.round}` : esc(namedBtn)}</button>
+            <button class="btn small" data-ready="${i}" ${C.ready_first ? 'disabled' : ''}>${C.ready_first ? `Ready first: ${C.ready_first.who}` : 'It says the plan is ready'}</button>
+          </div>
+          <div class="row" id="hstat-${i}"></div>
+          <details><summary>Add a note</summary><div class="row" style="gap:6px;margin-top:6px"><select data-ntype="${i}" style="width:auto"><option value="asked">It asked</option><option value="volunteered">It volunteered</option><option value="corrected">I corrected</option><option value="changed">I changed my mind</option></select>
+            <input data-note="${i}" placeholder="What" style="flex:1;min-width:100px"><button class="btn small" data-addnote="${i}">Add</button></div>
+            <div class="small muted" style="margin-top:6px">${C.events.map(e => `R${e.round} ${e.type}: ${esc(e.note)}`).join('<br>')}</div></details>
+          <details><summary>It replied where the console can’t see it?</summary><textarea data-paste="${i}" style="min-height:60px;margin-top:6px" placeholder="Paste the agent’s reply here"></textarea><button class="btn small" data-pastego="${i}" style="margin-top:6px">Add as its reply</button></details>
+          <details><summary>What had it learned by the handoff? (optional)</summary><textarea data-learned="${i}" style="min-height:60px;margin-top:6px">${esc(C.learned_before_handoff)}</textarea></details>
+        </div></div>`;
+    };
+    const cardPanel = spec.card_in_chat && S.card ? `<details class="panel" open style="margin-bottom:16px"><summary>Your scenario card: answer both agents from it</summary><div style="margin-top:8px;font-size:13px">${cardViewHTML(false, S.card)}</div></details>` : '';
+    m.innerHTML = `${cardPanel}<div class="duo">${ags.map(col).join('')}</div>
+      <div class="panel together-compose" id="t-compose"></div>
+      <details class="panel" style="margin-top:16px"><summary>Chat rules</summary><ul>${spec.chat_rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>`;
+    const at = i => chatOf(ags[i]);
+    m.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const C = at(+b.dataset.rec); C.first_recommendation = { round: C.rounds, at: nowIso() }; saveProgress(); renderTogether(m); });
+    m.querySelectorAll('[data-ready]').forEach(b => b.onclick = () => { const C = at(+b.dataset.ready); C.ready_first = { who: 'agent', round: C.rounds, at: nowIso() }; saveProgress(); renderTogether(m); });
+    m.querySelectorAll('[data-addnote]').forEach(b => b.onclick = () => { const i = +b.dataset.addnote, C = at(i), inp = m.querySelector(`[data-note="${i}"]`), note = inp.value.trim(); if (!note) return; C.events.push({ at: nowIso(), round: C.rounds, type: m.querySelector(`[data-ntype="${i}"]`).value, note }); saveProgress(); renderTogether(m); });
+    m.querySelectorAll('[data-pastego]').forEach(b => b.onclick = () => { const i = +b.dataset.pastego, C = at(i), ta = m.querySelector(`[data-paste="${i}"]`), t = ta.value.trim(); if (!t) return; C.manual.push(manualEntry(C, t)); saveProgress(); ta.value = ''; updateTogether(); });
+    m.querySelectorAll('[data-learned]').forEach(t => t.oninput = () => { at(+t.dataset.learned).learned_before_handoff = t.value; saveProgress(); });
+    renderTogetherCompose();
+    updateTogether();
+  }
+  function renderTogetherCompose() {
+    const el = $('t-compose'); if (!el) return;
+    const ags = order(), lim = spec.limits, phases = ags.map(a => chatPhase(chatOf(a)));
+    if (phases.every(p => p === 'opening')) {
+      el.innerHTML = `<div class="small muted">The opening goes to both agents at the same time. Each column’s timer starts when it goes out.</div>
+        <div class="msg me" style="max-width:100%;align-self:stretch">${esc(compose('opening'))}</div>
+        <div class="row"><span class="spacer"></span><button class="btn primary" id="t-open">${sendLabel('Send the opening to both')}</button></div><div class="err" id="t-err"></div>`;
+      $('t-open').onclick = async () => {
+        $('t-open').disabled = true;
+        try { await sendTogether(ags, () => compose('opening'), () => stepName('OPENING'), () => ({ round: 0 })); renderTogetherCompose(); updateTogether(); }
+        catch (e) { $('t-err').textContent = e.message; $('t-open').disabled = false; }
+      };
+      return;
+    }
+    if (phases.every(p => p === 'finished')) {
+      el.innerHTML = `<div class="row"><span class="banner ok" style="margin:0">Both chats are finished and saved.</span><span class="spacer"></span><button class="btn primary" id="t-next">Continue</button></div>`;
+      $('t-next').onclick = () => completeStage('chat:0');
+      return;
+    }
+    const open = ags.filter(a => chatPhase(chatOf(a)) === 'rounds');
+    const canReply = open.filter(a => chatOf(a).rounds < lim.turns && minutesSince(openingAt(chatOf(a))) < lim.handoff_minute);
+    const prev = el.dataset.to || 'both';
+    const toOpts = [canReply.length > 1 ? ['both', 'Both agents'] : null].concat(canReply.map(a => [a, `Agent ${labelOf(a)} only`])).filter(Boolean);
+    const sel = toOpts.some(o => o[0] === prev) ? prev : (toOpts[0] || [''])[0];
+    el.innerHTML = open.length ? `<textarea id="t-text" placeholder="${canReply.length ? 'Your reply' : 'No turns left: send the handoff.'}" ${canReply.length ? '' : 'disabled'}></textarea>
+      <div class="row to">${voiceHTML()}<span class="spacer"></span>
+        <span class="small muted">To</span><select id="t-to" style="width:auto">${toOpts.map(([v, l]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <button class="btn" id="t-send" ${canReply.length ? '' : 'disabled'}>${sendLabel('Send reply')}</button>
+        <select id="t-hto" style="width:auto">${(open.length > 1 ? [['both', 'Both agents']] : []).concat(open.map(a => [a, `Agent ${labelOf(a)}`])).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>
+        <button class="btn primary" id="t-hand">${sendLabel('Send the handoff')}</button></div>
+      <div class="err" id="t-err"></div>`
+      : `<div class="small muted">Both handoffs are out. Finish each column when its plan is in.</div>`;
+    if (!open.length) return;
+    const ta = $('t-text'), k = `draft.${S.pid}.${S.day}.together`;
+    ta.value = local.get(k) || ''; ta.oninput = () => local.set(k, ta.value);
+    $('t-to') && ($('t-to').onchange = e => { el.dataset.to = e.target.value; });
+    el.querySelector('.mic') && (el.querySelector('.mic').onclick = e => toggleMic(e.currentTarget, ta, `d${S.day}-together-${Date.now()}`, () => {}));
+    const recipients = v => v === 'both' ? null : [v];
+    const sendReply = async () => {
+      const t = ta.value.trim(); if (!t) return;
+      const to = recipients($('t-to').value) || canReply;
+      stopMic(); $('t-send').disabled = true;
+      to.forEach(a => chatOf(a).rounds++);
+      try { await sendTogether(to, () => t, a => stepName('ROUND', chatOf(a).rounds), a => ({ round: chatOf(a).rounds })); local.set(k, ''); renderTogetherCompose(); updateTogether(); }
+      catch (e) { to.forEach(a => chatOf(a).rounds--); $('t-err').textContent = e.message; $('t-send').disabled = false; }
+    };
+    $('t-send').onclick = sendReply;
+    ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(); };
+    $('t-hand').onclick = async () => {
+      const to = recipients($('t-hto').value) || open;
+      const trig = a => { const C = chatOf(a), mins = minutesSince(openingAt(C)); return C.rounds >= lim.turns ? TRIG('turns') : mins >= lim.handoff_minute ? TRIG('minute') : TRIG('ready'); };
+      if (to.some(a => trig(a) === TRIG('ready')) && !confirm(`Send the handoff to ${to.map(a => 'Agent ' + labelOf(a)).join(' and ')} now? Do this when you and the agent are both ready.`)) return;
+      $('t-hand').disabled = true;
+      try {
+        const triggers = Object.fromEntries(to.map(a => [a, trig(a)]));
+        to.forEach(a => { const C = chatOf(a); if (!C.ready_first) C.ready_first = { who: 'participant', round: C.rounds, at: nowIso() }; });
+        const entries = await sendTogether(to, () => compose('handoff'), () => stepName('HANDOFF'), () => ({ round: null }));
+        entries.forEach(([a, e]) => { chatOf(a).handoff = { sent_at: null, job: e.job, trigger: triggers[a], rounds: chatOf(a).rounds + 1, reply_at: null, partial: false }; });
+        saveProgress(); renderTogetherCompose(); updateTogether();
+      } catch (e) { $('t-err').textContent = e.message; $('t-hand').disabled = false; }
+    };
+  }
+  // One send to several agents, as the agent console's To: does: each channel gets it at about the same time.
+  async function sendTogether(agents, textOf, stepOf, extraOf) {
+    // Record each successful enqueue immediately; one failure must not erase or resend the other agent's message.
+    const out = await Promise.all(agents.map(async agent => {
+      try {
+        const entry = await sendToAgent(agent, textOf(agent), stepOf(agent), extraOf(agent));
+        return [agent, entry];
+      } catch (error) {
+        const entry = {job:null, step:stepOf(agent), text:textOf(agent), created_at:nowIso(), sent_at:null,
+          enqueue_error:error.message, ...extraOf(agent)};
+        chatOf(agent).sent.push(entry);
+        return [agent, entry];
+      }
+    }));
+    saveProgress();
+    return out;
+  }
+  function updateTogether() {
+    const lim = spec.limits;
+    const composeBox = $('t-compose');
+    const dueKey = order().map(a => chatOf(a).rounds >= lim.turns || minutesSince(openingAt(chatOf(a))) >= lim.handoff_minute).join(',');
+    if (composeBox && composeBox.dataset.due !== dueKey) { composeBox.dataset.due = dueKey; renderTogetherCompose(); }
+    order().forEach((agent, i) => {
+      const box = $('msgs-' + i); if (!box) return;
+      const C = chatOf(agent), t = transcript(agent), opened = openingAt(C);
+      if (opened && !C.opening_sent_at) { C.opening_sent_at = opened; saveProgress(); }
+      let lastStep = null, out = '';
+      for (const x of t) {
+        if (x.role === 'participant' && x.step !== lastStep) { out += `<div class="stepmark">${esc(x.step)}</div>`; lastStep = x.step; }
+        const j = x.job && jobById(x.job);
+        const state = x.role === 'participant' && j ? (j.state === 'queued' ? ' · queued' : !j.sent_at && j.state === 'running' ? ' · sending…' : j.state === 'failed' ? ` · failed: ${esc(j.error || '')}` : '') : '';
+        out += `<div class="msg ${x.role === 'participant' ? 'me' : 'agent'}">${esc(x.text)}<span class="meta">${x.unsent ? '' : esc(clock(x.at))}${x.manual ? ' · pasted' : ''}${state}</span></div>`;
+      }
+      const agentJob = [...C.sent].reverse().map(e => jobById(e.job)).find(Boolean);
+      if (agentJob && agentJob.state === 'running' && agentJob.sent_at) out += `<div class="stepmark">Recording the agent’s reply until it’s quiet…</div>`;
+      if (!t.length) out = '<div class="muted small" style="margin:auto">Nothing yet. Send the opening to start.</div>';
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      if (box.dataset.k !== out) { box.innerHTML = out; box.dataset.k = out; if (atBottom || !box.dataset.once) box.scrollTop = box.scrollHeight; box.dataset.once = '1'; }
+      const mins = opened ? minutesSince(opened) : null, tm = $('timer-' + i);
+      if (tm) {
+        const endAt = C.finished && C.handoff && C.handoff.reply_at ? new Date(C.handoff.reply_at).getTime() : Date.now() + clockOffset;
+        const sec = mins == null ? null : Math.max(0, Math.floor((endAt - new Date(opened).getTime()) / 1000));
+        tm.textContent = sec == null ? '--:--' : `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+        tm.className = 'timer' + (mins >= lim.total_minute ? ' bad' : mins >= lim.handoff_minute ? ' warn' : '');
+      }
+      const tu = $('turns-' + i); if (tu) tu.textContent = ROUND_OFF() ? `Round ${C.rounds + ROUND_OFF()} of ${lim.turns + ROUND_OFF()}` : `Turn ${C.rounds} of ${lim.turns}`;
+      const hs = $('hstat-' + i); if (!hs) return;
+      const phase = chatPhase(C);
+      let h = '';
+      // A send that failed (say, the agent's site wasn't ready) can go again: the entry keeps its step and text, and gets the new job
+      const failed = [...C.sent].reverse().find(e => { const j = jobById(e.job); return e.enqueue_error || (j && j.state === 'failed'); });
+      const resend = failed && ONLINE ? `<span class="err">${esc(failed.step)} didn’t go out.</span><button class="btn small" data-resend="${i}">Resend to this agent</button>` : '';
+      if (phase === 'rounds') {
+        const due = C.rounds >= lim.turns ? `${ROUND_OFF() ? 'Round ' + (lim.turns + ROUND_OFF()) : 'Turn ' + lim.turns}: send this agent the handoff.` : mins >= lim.handoff_minute ? `Minute ${lim.handoff_minute}: send this agent the handoff.` : '';
+        h = due ? `<span class="err">${esc(due)}</span>` : '';
+      } else if (phase === 'handoff' && C.handoff) {
+        const hj = jobById(C.handoff.job);
+        const replies = t.filter(x => x.role === 'agent' && x.step === stepName('HANDOFF'));
+        if (hj && hj.sent_at && !C.handoff.sent_at) C.handoff.sent_at = hj.sent_at;
+        if (!C.handoff.sent_at) { const e = C.sent.find(e => e.step === stepName('HANDOFF')); if (e) C.handoff.sent_at = sentAt(e); }
+        if (replies.length) C.handoff.reply_at = replies[replies.length - 1].at;
+        const quiet = !hj || ['done', 'failed', 'stopped', 'cancelled'].includes(hj.state);
+        const msg = !replies.length ? 'Waiting for its complete plan…' : quiet ? 'It has gone quiet. Check the plan is complete.' : 'It is still replying…';
+        h = `<span class="small muted">${esc(msg)}</span><span class="spacer"></span>${mins >= lim.total_minute && !quiet ? `<button class="btn small" data-partial="${i}">Use what’s there</button>` : ''}<button class="btn small primary" data-finish="${i}" ${replies.length || BROWSE ? '' : 'disabled'}>The plan is in: finish</button>`;
+      } else if (phase === 'finished') h = '<span class="small muted">Finished and saved.</span>';
+      h = resend + h;
+      if (hs.dataset.k !== h) {
+        hs.dataset.k = h; hs.innerHTML = h;
+        hs.querySelector('[data-resend]') && (hs.querySelector('[data-resend]').onclick = async ev => {
+          ev.currentTarget.disabled = true;
+          try {
+            if (!confirm('Check the agent conversation before retrying. Resend this message?')) { ev.currentTarget.disabled = false; return; }
+            const replacement = await sendToAgent(agent, failed.text, failed.step, {round:failed.round});
+            C.sent.splice(C.sent.indexOf(replacement), 1);
+            failed.failed_jobs = [...(failed.failed_jobs || []), failed.job];
+            failed.job = replacement.job; failed.sent_at = replacement.sent_at; failed.created_at = replacement.created_at;
+            delete failed.enqueue_error;
+            if (C.handoff && failed.step === stepName('HANDOFF')) C.handoff.job = replacement.job;
+            saveProgress(); delete hs.dataset.k; updateTogether();
+          } catch (e) { alert('Resend failed: ' + e.message); ev.currentTarget.disabled = false; }
+        });
+        const fin = async partial => { if (partial) C.handoff.partial = true; await finishAgent(agent); renderTogetherCompose(); updateTogether(); };
+        hs.querySelector('[data-finish]') && (hs.querySelector('[data-finish]').onclick = () => fin(false));
+        hs.querySelector('[data-partial]') && (hs.querySelector('[data-partial]').onclick = () => fin(true));
+      }
+    });
   }
 
   // MARK: Polling the console (only while a chat or the process reports are open)
@@ -1450,7 +1705,8 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       snapVersion = st.version; jobs = st.jobs || []; dryRun = st.dry_run;
       clockOffset = new Date(st.now).getTime() - Date.now();
       const key = S && S.stage || '';
-      if (key.startsWith('chat:')) updateChat(+key.slice(5));
+      if (key === 'chat:0') updateTogether();
+      else if (key === 'chat:0') updateTogether(); else if (key.startsWith('chat:')) updateChat(+key.slice(5));
       if (key === 'process') updateProcess();
     } catch (e) { /* the next poll may work */ }
   }
@@ -1475,7 +1731,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         out.personal_context_used = A.pc_used || null;
         out.position = pos; out.answered_at = nowIso();
         out.voice = Object.fromEntries(Object.keys(A).filter(k => k.endsWith('__audio')).map(k => [k.replace('__audio', ''), A[k]]));
-        if (Object.values(out).some(v => v === null || v === undefined) && ['plan_satisfaction', 'process_satisfaction', 'understood_me', 'host_voice', 'reuse'].some(k => out[k] == null)) {
+        if (spec.after_agent.filter(q => q.type === 'scale7' && !q.when).some(q => out[q.id] == null)) {
           S.session.flags = [...new Set([...(S.session.flags || []), 'skipped_ratings'])]; saveSession();
         }
         await saveFile(`day${S.day}/${agent}/after-agent.json`, { data: out });
@@ -1505,15 +1761,15 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   function renderDay1(m) {
     const A = D().wyd;
     renderQuestions(m, {
-      scope: 'd1:wyd', kicker: 'Day 1 · What you would really do', list: spec.day1, A, audioPrefix: 'd1-wyd', X: () => ({}), doneLabel: 'Save',
-      onDone: async () => { await saveFile('day1/what-you-would-do.json', { data: { plan_differently: A.plan_differently || '', invite_differently: A.invite_differently || '', answered_at: nowIso() } }); completeStage('day1'); },
+      scope: 'd1:wyd', kicker: 'Day 1 · What you would really do', list: spec.day1, A, audioPrefix: 'd1-wyd', X: () => ({ openDecisions: openDecisions(), open_decisions: openDecisions().join(', ') }), doneLabel: 'Save',
+      onDone: async () => { await saveFile('day1/what-you-would-do.json', { data: { plan_differently: A.plan_differently || '', invite_differently: A.invite_differently || '', ...(A.open_decision_help !== undefined ? { open_decision_help: A.open_decision_help } : {}), answered_at: nowIso() } }); completeStage('day1'); },
     });
   }
   function renderLearn(m, pos) {
     const agent = order()[pos - 1], d = D(), A = (d.learning[agent] = d.learning[agent] || {});
     renderQuestions(m, {
       scope: `d2:learn:${agent}`, kicker: `Day 2 · Learning check · Agent ${labelOf(agent)}`, list: spec.learning, A, audioPrefix: `d2-${agent}-learning`, X: () => ({ agent_label: labelOf(agent) }), doneLabel: 'Save',
-      onDone: async () => { await saveFile(`day2/${agent}/learning-check.json`, { data: { vs_day1: A.vs_day1 ?? null, remembered: A.remembered || '', repeated: A.repeated || '', answered_at: nowIso() } }); completeStage('learn:' + pos); },
+      onDone: async () => { await saveFile(`day2/${agent}/learning-check.json`, { data: { vs_day1: A.vs_day1 ?? null, remembered: A.remembered || '', repeated: A.repeated || '', ...(A.wrongly_carried !== undefined ? { wrongly_carried: A.wrongly_carried, wrongly_carried_what: A.wrongly_carried_what || null } : {}), answered_at: nowIso() } }); completeStage('learn:' + pos); },
     });
   }
 
@@ -1568,9 +1824,9 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const files = ['session.json', 'history.jsonl', 'scenario/card.json', 'scenario/interview.md', 'scenario/interview.json', 'scenario/changes.jsonl']
       .concat(...[1, 2].filter(d => S.d && S.d[String(d)]).map(d => [`day${d}/comparison.json`, d === 1 ? 'day1/what-you-would-do.json' : null].concat(...S.session.agents.map(a => [`day${d}/${a}/conversation.jsonl`, `day${d}/${a}/chat-notes.json`, `day${d}/${a}/after-agent.json`, d === 2 ? `day2/${a}/learning-check.json` : null])))).filter(Boolean);
     m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day}</div><h2>Thank you. Day ${S.day} is done.</h2>
-      <p class="help">${S.day === 1 ? 'Come back for day 2 with the same participant ID: the agents go in the reverse order, with the same card.' : 'Both days are done.'}</p>
+      <p class="help">${SINGLE_SESSION() ? 'Your study session is complete.' : S.day === 1 ? 'Come back for day 2 with the same participant ID: the agents go in the reverse order, with the same card.' : 'Both days are done.'}</p>
       <p class="small muted">Saved under <code>data/study/${esc(S.pid)}/</code>:</p><div class="files">${files.map(esc).join('<br>')}</div>
-      <div class="nav"><button class="btn" id="dl">Download everything (JSON)</button><span class="spacer"></span>${S.day === 1 ? '<button class="btn primary" id="d2">Set up day 2</button>' : ''}</div></div>`;
+      <div class="nav"><button class="btn" id="dl">Download everything (JSON)</button><span class="spacer"></span>${S.day === 1 && !SINGLE_SESSION() ? '<button class="btn primary" id="d2">Set up day 2</button>' : ''}</div></div>`;
     $('dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' })); a.download = `${S.pid}-study-state.json`; a.click(); };
     $('d2') && ($('d2').onclick = () => { D().done.done = true; S.day = 2; go('setup'); });
     D().done.done = true; saveProgress(true);
@@ -1582,7 +1838,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       <h2>${submitted ? 'Results submitted' : 'Review and submit'}</h2>
       <p class="help">${submitted ? 'The research team can now see your submission.' : 'Submit your saved answers and chat transcript to the research team.'}</p>
       <div class="nav"><span class="err" id="submit-error" role="alert"></span>
-      ${submitted ? (day === 1 ? '<button class="btn primary" id="d2">Set up day 2</button>' : '') :
+      ${submitted ? (day === 1 && !SINGLE_SESSION() ? '<button class="btn primary" id="d2">Set up day 2</button>' : '') :
         '<button class="btn primary" id="submit-results">Submit results</button>'}</div></div>`;
     $('d2') && ($('d2').onclick = () => { S.day = 2; go('setup'); });
     const button = $('submit-results');
@@ -1595,7 +1851,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         await saveProgress(true);
         for (const [key, body] of [...pendingWrites]) await cloudSave(key, body);
         if (pendingWrites.size) throw new Error(saveErr || 'Some of your answers could not be saved.');
-        const { submitted: result } = await api('/api/study/submit', { day, pid: S.pid });
+        const { submitted: result } = await api('/api/study/submit', { day, pid: S.pid, task: S.task });
         submissions.set(day, result);
         renderCloudDone(m);
       } catch (error) {
@@ -1634,13 +1890,13 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           jobs = result.jobs;
           retainConnectorMessages();
           const key = S?.stage || '';
-          if (key.startsWith('chat:')) updateChat(+key.slice(5));
+          if (key === 'chat:0') updateTogether(); else if (key.startsWith('chat:')) updateChat(+key.slice(5));
           if (key === 'process') updateProcess();
           return S?.connector_jobs || result.jobs;
         }, settings.local_connector);
         button.onclick = () => {
           const chat = S?.stage?.match(/^chat:(\d+)$/);
-          studyConnect.open(dialog, chat ? order()[Number(chat[1]) - 1] : null);
+          studyConnect.open(dialog, chat && Number(chat[1]) > 0 ? order()[Number(chat[1]) - 1] : null);
         };
       }
       clockOffset = new Date(settings.now).getTime() - Date.now();
@@ -1658,7 +1914,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   // MARK: Start
 
   document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b && !b.disabled) go(b.dataset.go); });
-  setInterval(() => { const k = S && S.stage || ''; if (k.startsWith('chat:')) updateChat(+k.slice(5)); }, 1000);
+  setInterval(() => { const k = S && S.stage || ''; if (k === 'chat:0') updateTogether(); else if (k.startsWith('chat:')) updateChat(+k.slice(5)); }, 1000);
   window.addEventListener('beforeunload', event => {
     if (S && !HOSTED) local.set(`${S.pid}.progress`, S);
     if (HOSTED && (saveTimer || pendingWrites.size)) {
