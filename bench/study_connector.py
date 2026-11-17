@@ -113,7 +113,7 @@ def address_dialog(name, description):
     return result.stdout.strip()
 
 
-def configure_agent(name, channel):
+def configure_agent(name, channel, *, open_channel=True):
     """Collect the address on the Mac and keep it in the ignored local config."""
     descriptions = {
         "imessage": "iMessage phone number with country code or email",
@@ -129,30 +129,44 @@ def configure_agent(name, channel):
     local = yaml.safe_load(LOCAL_AGENTS_FILE.read_text()) or {} if LOCAL_AGENTS_FILE.exists() else {}
     entries = local.setdefault("agents", {})
     previous = entries.get(name) or {}
-    changed = previous.get("channel") != channel or previous.get("handle") != handle
     entries[name] = previous | {"channel": channel, "handle": handle}
     store(LOCAL_AGENTS_FILE, local, yaml.safe_dump)
     print(f"Saved {name} on this Mac.")
-    if channel == "imessage" and changed:
+    if open_channel:
+        setup_channel(channel)
+
+
+def prepare_imessage_reader():
+    """Install only when needed; the explicit permission step opens one window."""
+    import hashlib
+
+    binary = Path.home() / "Library/Application Support/bench-reader/bench-reader"
+    marker = STATE / "imessage-reader.json"
+    handles = {a.name: a.handle for a in load_agents().values() if a.channel == "imessage"}
+    if not handles:
+        raise ConnectorError("Enter the agent’s iMessage contact first.")
+    try:
+        previous = json.loads(marker.read_text())
+    except (OSError, ValueError):
+        previous = {}
+    fingerprint = hashlib.sha256(binary.read_bytes()).hexdigest() if binary.exists() else None
+    if not fingerprint or previous != {"handles": handles, "binary": fingerprint}:
         if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
             subprocess.run(["xcode-select", "--install"], capture_output=True)
-            raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
-        subprocess.run([str(ROOT / "reader/install.sh")], check=True, capture_output=True)
-        subprocess.run(["open", "-a", "Messages"], check=True)
-    else:
-        setup_channel(channel)
+            raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then click Open permission settings again.")
+        subprocess.run([str(ROOT / "reader/install.sh"), "--no-open"], check=True, capture_output=True)
+        STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+        store(marker, {"handles": handles, "binary": hashlib.sha256(binary.read_bytes()).hexdigest()})
+    service = f"gui/{os.getuid()}/{READER_LABEL}"
+    if subprocess.run(["launchctl", "print", service], capture_output=True).returncode:
+        plist = Path.home() / "Library/LaunchAgents" / f"{READER_LABEL}.plist"
+        subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist)], check=True, capture_output=True)
+    subprocess.run(["open", SETTINGS], check=True)
 
 
 def setup_channel(channel):
     if channel == "imessage":
         subprocess.run(["open", "-a", "Messages"], check=True)
-        if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
-            subprocess.run(["xcode-select", "--install"], capture_output=True)
-            raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
-        domain = f"gui/{os.getuid()}/{READER_LABEL}"
-        if subprocess.run(["launchctl", "print", domain], capture_output=True).returncode:
-            subprocess.run([str(ROOT / "reader/install.sh")], check=True, capture_output=True)
-        subprocess.run(["open", SETTINGS], check=True)
         return
     command = SETUP[channel]
     python = ROOT / ".venv/bin/python"
@@ -264,7 +278,19 @@ def run_job(origin, credential, job):
     configured = agent and agent.channel == job["channel"]
     if job["kind"] == "setup":
         try:
-            if configured and agent.channel != "whatsapp":
+            if job["channel"] == "imessage":
+                step = job.get("step", "CHANNEL SETUP")
+                if step in ("CHANNEL SETUP", "IMESSAGE CONTACT"):
+                    configure_agent(job["agent"], "imessage", open_channel=False)
+                elif not configured:
+                    raise ConnectorError("Enter the agent’s iMessage contact first.")
+                elif step == "IMESSAGE SIGNIN":
+                    setup_channel("imessage")
+                elif step == "IMESSAGE PERMISSIONS":
+                    prepare_imessage_reader()
+                else:
+                    raise ConnectorError("Choose a valid iMessage setup step.")
+            elif configured and agent.channel != "whatsapp":
                 setup_channel(agent.channel)
             else:
                 configure_agent(job["agent"], job["channel"])
@@ -285,7 +311,7 @@ def run_job(origin, credential, job):
         try:
             subprocess.run(["launchctl", "kickstart", "-k", service], check=True, capture_output=True)
         except (OSError, subprocess.CalledProcessError):
-            report("failed", error="Could not restart bench-reader. Click Set up iMessage and finish setup on your Mac, then try again.")
+            report("failed", error="Could not restart the Messages reader. Return to the permissions step and click Open permission settings, then try again.")
             return
 
     console = Console({agent.name: agent}, snapshot_links=False, jobs_dir=STATE / "jobs")

@@ -173,6 +173,11 @@ class Devices:
             step = "CONNECTION TEST"
         else:
             prompt, step = "", "CHANNEL SETUP"
+            setup_step = body.get("setup_step")
+            if setup_step is not None:
+                if channel != "imessage" or setup_step not in ("contact", "signin", "permissions"):
+                    raise DeviceError(400, "Choose a valid iMessage setup step.")
+                step = "IMESSAGE " + setup_step.upper()
         now = time.time()
         with self.transaction() as db:
             self.expire(db, owner, now)
@@ -187,6 +192,9 @@ class Devices:
                                      and kind != 'run' """, (device["id"],)).fetchone()
             if pending:
                 raise DeviceError(409, "Wait for the current connection step to finish.")
+            if kind == "setup" and channel == "imessage":
+                verified = [name for name in json.loads(device["verified"]) if name != agent]
+                db.execute("update devices set verified = ? where id = ?", (json.dumps(verified), device["id"]))
             job = uuid4().hex
             db.execute("""insert into jobs values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', null, '[]', null)""",
                        (job, owner, device["id"], agent, channel, kind, prompt, step, task, now, now))

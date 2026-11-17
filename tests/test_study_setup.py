@@ -83,7 +83,7 @@ def test_whatsapp_setup_reprompts_for_saved_address_every_time(monkeypatch):
     assert [r['state'] for r in reports] == ['done', 'done']
 
 
-def test_imessage_setup_opens_settings_and_installs_without_terminal(monkeypatch):
+def test_imessage_signin_only_opens_messages(monkeypatch):
     from types import SimpleNamespace
     calls = []
     def run(args, **kwargs):
@@ -92,8 +92,55 @@ def test_imessage_setup_opens_settings_and_installs_without_terminal(monkeypatch
     monkeypatch.setattr(connector.subprocess, 'run', run)
     monkeypatch.setattr(connector, 'terminal_command', lambda *args: pytest.fail('Terminal opened'))
     connector.setup_channel('imessage')
-    assert [str(connector.ROOT / 'reader/install.sh')] in calls
-    assert ['open', connector.SETTINGS] in calls
+    assert calls == [['open', '-a', 'Messages']]
+
+
+def test_imessage_contact_saves_without_opening_other_windows(monkeypatch, tmp_path):
+    import yaml
+    path = tmp_path / 'agents.local.yaml'
+    monkeypatch.setattr(connector, 'LOCAL_AGENTS_FILE', path)
+    monkeypatch.setattr(connector, 'address_dialog', lambda *a: '+15550100001')
+    monkeypatch.setattr(connector, 'setup_channel', lambda *a: pytest.fail('Opened another window'))
+    monkeypatch.setattr(connector.subprocess, 'run', lambda *a, **k: pytest.fail('Started installation'))
+    connector.configure_agent('instinct', 'imessage', open_channel=False)
+    assert yaml.safe_load(path.read_text())['agents']['instinct']['handle'] == '+15550100001'
+
+
+def test_imessage_permission_step_installs_silently_once(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr(connector.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(connector, 'STATE', tmp_path / 'state')
+    monkeypatch.setattr(connector, 'load_agents', lambda: {
+        'instinct': SimpleNamespace(name='instinct', channel='imessage', handle='+15550100001')})
+    binary = tmp_path / 'Library/Application Support/bench-reader/bench-reader'
+    install = [str(connector.ROOT / 'reader/install.sh'), '--no-open']
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        if args == install:
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            binary.write_bytes(b'test-reader')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(connector.subprocess, 'run', run)
+    connector.prepare_imessage_reader()
+    connector.prepare_imessage_reader()
+    assert calls.count(install) == 1
+    assert [c for c in calls if c[0] == 'open'] == [['open', connector.SETTINGS]] * 2
+
+
+@pytest.mark.parametrize('step,expected', [('CHANNEL SETUP', 'contact'), ('IMESSAGE CONTACT', 'contact'),
+                                         ('IMESSAGE SIGNIN', 'signin'), ('IMESSAGE PERMISSIONS', 'permissions')])
+def test_imessage_job_runs_only_the_requested_step(monkeypatch, step, expected):
+    from types import SimpleNamespace
+    calls = []
+    monkeypatch.setattr(connector, 'load_agents', lambda: {'instinct': SimpleNamespace(channel='imessage')})
+    monkeypatch.setattr(connector, 'configure_agent', lambda *a, **k: calls.append(('contact', k)))
+    monkeypatch.setattr(connector, 'setup_channel', lambda *a: calls.append(('signin', {})))
+    monkeypatch.setattr(connector, 'prepare_imessage_reader', lambda: calls.append(('permissions', {})))
+    monkeypatch.setattr(connector, 'request', lambda *a: {'accepted': True})
+    connector.run_job('https://study.example', 'test-credential', {
+        'id': 'job', 'kind': 'setup', 'agent': 'instinct', 'channel': 'imessage', 'step': step})
+    assert calls == [(expected, {'open_channel': False} if expected == 'contact' else {})]
 
 
 def test_slack_pins_before_browser_login_without_sync_or_send(monkeypatch):

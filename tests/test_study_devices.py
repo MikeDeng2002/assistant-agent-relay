@@ -5,6 +5,23 @@ from bench.study_devices import DeviceError, Devices
 AGENTS = {"instinct": "imessage"}
 
 
+def test_imessage_setup_steps_are_validated_and_delivered(tmp_path):
+    devices = Devices(tmp_path / 'devices.db')
+    owner = 'participant-a'
+    configured = AGENTS | {'muse': 'muse'}
+    token = devices.pair(devices.code(owner)['code'], configured, configured)['credential']
+    for invalid in ('unknown', ['signin']):
+        with pytest.raises(DeviceError, match='valid iMessage setup step'):
+            devices.queue(owner, configured, 'Restaurant', {'kind': 'setup', 'agent': 'instinct', 'setup_step': invalid})
+    with pytest.raises(DeviceError, match='valid iMessage setup step'):
+        devices.queue(owner, configured, 'Restaurant', {'kind': 'setup', 'agent': 'muse', 'setup_step': 'signin'})
+    for step in ('contact', 'signin', 'permissions'):
+        job = devices.queue(owner, configured, 'Restaurant', {'kind': 'setup', 'agent': 'instinct', 'setup_step': step})
+        claim = devices.exchange(token, 'poll', {'agents': configured}, configured)['job']
+        assert claim['step'] == 'IMESSAGE ' + step.upper()
+        assert devices.exchange(token, 'report', {'id': job['id'], 'state': 'done', 'replies': []}, configured)['accepted']
+
+
 def test_pairing_is_single_use_and_disconnect_revokes_device(tmp_path):
     devices = Devices(tmp_path / "devices.db")
     code = devices.code("participant-a")["code"]

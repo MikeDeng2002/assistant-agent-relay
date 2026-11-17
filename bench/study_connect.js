@@ -19,6 +19,7 @@ const studyConnect = (() => {
   let onUpdate, startCommand, taskNavigation;
   let shortcutSupported = false, lastShortcutMode = null;
   let autoSetupAgent = null;
+  const imessagePages = {};
   let history = [];
   let renderedMessages = null, renderedAgent = null;
   const webChannels = new Set(['hark', 'muse', 'wajo']);
@@ -52,9 +53,35 @@ const studyConnect = (() => {
     dialog.querySelector('#connector-conversation').hidden = !device;
     const isIMessage = channel === 'imessage';
     const showIMessageSteps = device?.online && isIMessage && !verified;
+    if (showIMessageSteps && !lastError && job?.state !== 'failed' && !pending) {
+      status.textContent = 'Mac online · finish iMessage setup below';
+    }
+    const iSetup = jobs.findLast(j => j.agent === selected && j.kind === 'setup');
+    const iPage = isIMessage ? (imessagePages[selected] ||
+      (iSetup?.step === 'IMESSAGE PERMISSIONS' ? 'permissions' :
+       iSetup?.step === 'IMESSAGE SIGNIN' || (iSetup?.state === 'done' &&
+       ['CHANNEL SETUP', 'IMESSAGE CONTACT'].includes(iSetup.step)) ? 'signin' : 'contact')) : null;
     dialog.querySelector('#connector-imessage-steps').hidden = !showIMessageSteps;
-    dialog.querySelector('#connector-imessage-reader').hidden = !showIMessageSteps;
-    setup.textContent = isIMessage ? 'Set up iMessage' : 'Open channel setup';
+    dialog.querySelector('#connector-imessage-reader').hidden = !showIMessageSteps || iPage !== 'permissions';
+    const iNext = dialog.querySelector('#connector-imessage-next');
+    iNext.hidden = !showIMessageSteps || iPage !== 'signin';
+    iNext.disabled = actionPending || pending;
+    const iRestart = dialog.querySelector('#connector-imessage-restart');
+    iRestart.hidden = !device?.online || !isIMessage || (iPage === 'contact' && !verified);
+    iRestart.disabled = actionPending || pending;
+    setup.dataset.setupStep = iPage || '';
+    setup.textContent = isIMessage ? ({contact: 'Enter agent contact', signin: 'Open Messages', permissions: 'Open permission settings'}[iPage]) : 'Open channel setup';
+    if (showIMessageSteps) {
+      const pages = {
+        contact: ['1', 'Enter the agent’s contact', 'Enter the agent’s iMessage phone number with country code or email address. Use the agent’s contact, not your own. This step opens only the contact entry box.'],
+        signin: ['2', 'Sign in to Messages', 'Open Messages and sign in with your own Apple Account if needed. If you are already signed in, just continue. Return here and click “I’m signed in — Continue” when ready.'],
+        permissions: ['3', 'Allow Study to read agent replies', 'Click Open permission settings to prepare the reader and open Full Disk Access. Add or enable bench-reader, then return here and click Test connection. Study will restart the reader automatically. If macOS asks to control Messages during the test, click Allow.'],
+      };
+      const [number, title, description] = pages[iPage];
+      dialog.querySelector('#connector-imessage-progress').textContent = 'iMessage setup · Step ' + number + ' of 3';
+      dialog.querySelector('#connector-imessage-title').textContent = title;
+      dialog.querySelector('#connector-imessage-description').textContent = description;
+    }
     let instructions = help[channel] || '';
     if (device?.online && !available) {
       instructions = 'Open channel setup and finish configuring this agent on your Mac. ' + instructions;
@@ -63,6 +90,7 @@ const studyConnect = (() => {
     }
     direction.hidden = !device?.online || Boolean(showIMessageSteps) || Boolean(verified);
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
+    dialog.querySelector('#connector-next-help').hidden = Boolean(showIMessageSteps);
     dialog.querySelector('#connector-next-help').textContent = verified ?
       'Ready. Click ' + (taskNavigation?.label || 'Continue to task') + ' to continue. Both selected agents need to pass the test.' :
       channel === 'whatsapp' ? 'Use the agent’s contact number and link your own WhatsApp account. Then click Test connection and wait for the agent’s reply.' :
@@ -70,7 +98,10 @@ const studyConnect = (() => {
     renderMessages();
     dialog.querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
+    setup.hidden = Boolean(isIMessage && verified);
     test.disabled = actionPending || !device?.online || !available || pending;
+    test.hidden = Boolean(showIMessageSteps && (iPage !== 'permissions' || iSetup?.step !== 'IMESSAGE PERMISSIONS' || iSetup?.state !== 'done'));
+    test.textContent = 'Test connection';
     test.className = verified ? 'btn' : 'btn primary';
     const next = dialog.querySelector('#connector-continue');
     next.hidden = !taskNavigation || !verified;
@@ -149,7 +180,7 @@ const studyConnect = (() => {
 
   function requestWebSetup() {
     const channel = picker.selectedOptions[0]?.dataset.channel;
-    autoSetupAgent = labels[channel] ? selected : null;
+    autoSetupAgent = labels[channel] && channel !== 'imessage' ? selected : null;
     maybeOpenWebSetup();
   }
 
@@ -219,6 +250,15 @@ const studyConnect = (() => {
       taskNavigation?.continue(selected);
     };
     disconnect = dialog.querySelector('#connector-disconnect');
+    dialog.querySelector('#connector-imessage-next').onclick = () => {
+      imessagePages[selected] = 'permissions';
+      updateView();
+    };
+    dialog.querySelector('#connector-imessage-restart').onclick = () => {
+      delete imessagePages[selected];
+      action(() => queue('setup', selected, {setup_step: 'contact'}));
+    };
+    copyButton('#connector-copy-reader', {textContent: '~/Library/Application Support/bench-reader/bench-reader'});
 
     for (const {name, channel} of agents) {
       if (!labels[channel]) continue;
@@ -268,7 +308,9 @@ const studyConnect = (() => {
     };
     setup.onclick = () => {
       autoSetupAgent = null;
-      action(() => queue('setup', selected));
+      const extra = setup.dataset.setupStep ? {setup_step: setup.dataset.setupStep} : {};
+      delete imessagePages[selected];
+      action(() => queue('setup', selected, extra));
     };
     test.onclick = () => action(() => queue('test', selected));
     dialog.querySelector('#connector-send').onclick = () => action(async () => {

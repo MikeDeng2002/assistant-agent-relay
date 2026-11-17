@@ -41,16 +41,15 @@ selected='instinct';
 picker.selectedOptions[0].dataset.channel='imessage';
 requestWebSetup();
 assert.equal(autoSetupAgent,null);
-assert.equal(calls.length,2);
-assert.deepEqual(calls[1],['setup','instinct']);
+assert.equal(calls.length,1); // iMessage opens only after an explicit step button.
 selected='muse';
 picker.selectedOptions[0].dataset.channel='muse';
 latest.device.verified=['muse'];
 requestWebSetup();
-assert.equal(calls.length,3);
-assert.deepEqual(calls[2],['setup','muse']);
+assert.equal(calls.length,2);
+assert.deepEqual(calls[1],['setup','muse']);
 latest.jobs=[{agent:'muse',kind:'setup',state:'queued'}];
 requestWebSetup();assert.equal(autoSetupAgent,null);
-latest.jobs=[];maybeOpenWebSetup();assert.equal(calls.length,3);
+latest.jobs=[];maybeOpenWebSetup();assert.equal(calls.length,2);
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True,text=True)

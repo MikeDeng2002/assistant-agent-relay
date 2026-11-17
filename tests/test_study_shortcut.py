@@ -40,7 +40,8 @@ let mounted=true,latest={device:null,jobs:[]},selected='muse',lastError='',actio
 let codeExpiry=Date.now()+300000,shortcutSupported=true,lastShortcutMode=null;
 const picker={selectedOptions:[{dataset:{channel:'muse'}}]};
 const dialog={querySelector:el};
-const status={},setup={},test={},disconnect={},direction={},codeBox={},codeText={textContent:'test-code'};
+const status={},setup={dataset:{}},test={},disconnect={},direction={},codeBox={},codeText={textContent:'test-code'};
+const imessagePages={};
 const labels={muse:'Muse',whatsapp:'WhatsApp'};const taskNavigation={};const help={muse:'Sign in to Muse'};const startCommand='run';
 const renderMessages=()=>{};
 ''' + update + '''
@@ -67,6 +68,24 @@ codeExpiry=Date.now()-1;updateView();assert.equal(codeBox.hidden,true);
 latest.device={online:true,agents:{whatsapp:'whatsapp'},verified:[]};updateView();
 assert.equal(el('#connector-install').hidden,true);
 assert.equal(test.disabled,false);
+// iMessage shows one step at a time and never offers a test before permission setup.
+picker.selectedOptions[0].dataset.channel='imessage';selected='instinct';
+latest.device.agents.instinct='imessage';updateView();
+assert.equal(setup.dataset.setupStep,'contact');
+assert.equal(test.hidden,true);
+assert.equal(el('#connector-imessage-reader').hidden,true);
+latest.jobs=[{agent:'instinct',kind:'setup',step:'IMESSAGE CONTACT',state:'done'}];updateView();
+assert.equal(setup.dataset.setupStep,'signin');
+assert.equal(el('#connector-imessage-next').hidden,false);
+assert.equal(el('#connector-imessage-reader').hidden,true);
+imessagePages.instinct='permissions';updateView();
+assert.equal(setup.dataset.setupStep,'permissions');
+assert.equal(test.hidden,true);
+delete imessagePages.instinct;
+latest.jobs.push({agent:'instinct',kind:'setup',step:'IMESSAGE PERMISSIONS',state:'done'});updateView();
+assert.equal(test.hidden,false);
+assert.equal(el('#connector-imessage-reader').hidden,false);
+assert.equal(el('#connector-imessage-next').hidden,true);
 '''
     subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
 
