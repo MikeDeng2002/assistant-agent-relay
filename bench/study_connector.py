@@ -264,7 +264,7 @@ def run_job(origin, credential, job):
     configured = agent and agent.channel == job["channel"]
     if job["kind"] == "setup":
         try:
-            if configured:
+            if configured and agent.channel != "whatsapp":
                 setup_channel(agent.channel)
             else:
                 configure_agent(job["agent"], job["channel"])

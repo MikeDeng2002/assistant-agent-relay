@@ -5,7 +5,7 @@ const studyConnect = (() => {
     muse: 'muse.ai', hark: 'hark.com', wajo: 'wajo.ai', telegram: 'Telegram',
   };
   const help = {
-    whatsapp: 'First, make sure you have access to this agent on WhatsApp and can get a reply in its chat. When asked for an address, enter the agent’s WhatsApp number with country code—not your own number. Then scan the QR code using your own WhatsApp → Settings → Linked Devices → Link a Device. Scanning connects your WhatsApp account; it does not create or activate an agent. Once both steps are complete, click Test connection. If Go is missing, install it from the official page that opens and try setup again.',
+    whatsapp: 'Make sure you already have access to this agent on WhatsApp. Each time you click Open channel setup, enter the agent’s WhatsApp number with country code—not your own number. If a QR code appears, scan it with your own WhatsApp → Settings → Linked Devices → Link a Device. An existing WhatsApp login may be reused, but you will always be asked for the agent’s number. Then click Test connection. Linking WhatsApp does not create or activate an agent.',
     slack: 'Sign in to the workspace containing your Dot in the dedicated Chrome window. The connector uses your locally configured Slack app token.',
     muse: 'Sign in to Muse in the dedicated Chrome window and wait for the main chat to open.',
     hark: 'Sign in to Hark in the dedicated Chrome window.',

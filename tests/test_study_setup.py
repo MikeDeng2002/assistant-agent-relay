@@ -65,6 +65,24 @@ def test_unconfigured_channel_collects_address_without_terminal(monkeypatch):
     assert calls == [('instinct', 'whatsapp')]
 
 
+def test_whatsapp_setup_reprompts_for_saved_address_every_time(monkeypatch):
+    from types import SimpleNamespace
+    calls, reports = [], []
+    monkeypatch.setattr(connector, 'load_agents', lambda: {
+        'instinct-whatsapp': SimpleNamespace(channel='whatsapp', handle='+15550100001')})
+    monkeypatch.setattr(connector, 'configure_agent', lambda *args: calls.append(args))
+    monkeypatch.setattr(connector, 'setup_channel', lambda *args: pytest.fail('Skipped address entry'))
+    def report(origin, action, body, credential):
+        reports.append(body)
+        return {'accepted': True}
+    monkeypatch.setattr(connector, 'request', report)
+    for job_id in ('first', 'reconnect'):
+        connector.run_job('https://study.example', 'test-credential', {
+            'id': job_id, 'kind': 'setup', 'agent': 'instinct-whatsapp', 'channel': 'whatsapp'})
+    assert calls == [('instinct-whatsapp', 'whatsapp')] * 2
+    assert [r['state'] for r in reports] == ['done', 'done']
+
+
 def test_imessage_setup_opens_settings_and_installs_without_terminal(monkeypatch):
     from types import SimpleNamespace
     calls = []
