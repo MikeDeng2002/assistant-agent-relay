@@ -254,10 +254,10 @@ class StudyHandler(BaseHTTPRequestHandler):
             name = {"/study-auth.js": "study_auth.js", "/study-connect.js": "study_connect.js"}[path]
             return self.respond(200, (TEMPLATES / name).read_bytes(),
                                 "text/javascript; charset=utf-8")
-        if path == "/study-muse.shortcut":
+        if path in ("/study-muse.shortcut", "/study-setup.shortcut"):
             name = "Connect Study - Muse.shortcut"
             return self.respond(200, (TEMPLATES / name).read_bytes(),
-                                "application/octet-stream", download=name)
+                                "application/octet-stream", download="Study Connect.shortcut")
         if path == "/study-connector.zip":
             script = TEMPLATES / "Set Up Study Connector.command"
             archive = BytesIO()

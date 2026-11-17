@@ -166,20 +166,42 @@ It does not automatically grant agents email/calendar access, run a live AI
 interviewer, or perform the research team's rubric coding. Those remain separate
 study operations. Do not import pilot participant records as new responses.
 
-### Muse Shortcuts download
+### Browser-to-Shortcuts setup
 
-The production Connect agent dialog offers `/study-muse.shortcut` for Muse on
-macOS. Download, open, Add Shortcut, and run **Connect Study - Muse**. Participants
-paste a fresh Study pairing code into its native dialog; they do not create a
-shortcut or open Terminal. First use can require enabling **Shortcuts → Settings
-→ Advanced → Allow Running Scripts** and approving macOS prompts. Google Chrome
-is required; setup links to its official download if absent.
+The production Connect agent dialog offers the shared **Study Connect** shortcut
+for all supported channels. Add it once from
+https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5,
+return to Study, copy a pairing code and click **Run Study setup**.
+The `shortcuts://run-shortcut?name=Study%20Connect` link opens the installed
+shortcut without Finder or Terminal. Adding alone does not run it; the browser
+may ask to open Shortcuts. Keep the shortcut name unchanged.
 
-The checked-in artifact was signed with `shortcuts sign --mode anyone`, using
-`scripts/build_study_shortcut.py` and `scripts/setup-study-shortcut.sh`. This is
-Apple's shortcut-sharing signature, not a Developer ID app signature. Rebuild on
-macOS, then test the actual browser-downloaded artifact before replacing it.
-The shortcut is tied to the production Study origin, so the UI does not offer
-it on other origins or the local console. Other channels retain their existing
-setup. Pairing and opening Muse were tested on the development Mac; this does
-not establish a clean-machine login or a successful agent test reply.
+First use requires **Shortcuts → Settings → Advanced → Allow Running Scripts**.
+The signed `/study-setup.shortcut` download remains a fallback; the old
+`/study-muse.shortcut` endpoint is an alias. The artifact is signed using
+`scripts/build_study_shortcut.py` and `scripts/setup-study-shortcut.sh`, with
+Apple’s `shortcuts sign --mode anyone`, not a Developer ID app signature.
+Rebuilding the file does not update the public iCloud snapshot: share the new
+script and update the page link too. Pairing dialogs have an explicit long
+AppleEvent timeout; cancellation is separate from errors.
+
+Keep the Study tab open: after pairing, its polling starts the selected agent’s
+setup once. **Open channel setup** retries. Muse, Hark and Wajo use dedicated
+Chrome sign-in; Chrome must be installed. WhatsApp and Telegram display QR codes
+on a temporary loopback-only browser page, with an unguessable path, Host check,
+no caching and no remote assets. QR codes never go to the Study server.
+WhatsApp needs Go to build the bridge (the official installer page opens if
+missing). Telegram needs API credentials preconfigured by the administrator;
+its optional two-step password uses a hidden native input dialog.
+
+Dots/Slack still requires a valid user token and the correct workspace configured
+on each Mac; setup validates those before browser sign-in. iMessage still needs
+user-approved Full Disk Access for bench-reader. The webpage’s Test connection
+restarts the reader after permission changes. Setup does not grant OS permissions
+or create service credentials automatically. These requirements are surfaced as
+actionable errors rather than hidden Terminal prompts.
+
+Muse pairing/opening was previously tested on this development Mac. The shared
+multi-channel flow and browser QR plumbing have automated tests; first-time
+service login, actual QR linking and a successful agent reply require the relevant
+participant’s account and are not established by those tests.

@@ -96,8 +96,10 @@ def terminal_command(args):
 
 def address_dialog(name, description):
     result = subprocess.run(["osascript", "-e", '''on run argv
+        with timeout of 86400 seconds
         set answer to display dialog (item 1 of argv) default answer "" buttons {"Cancel", "Save"} default button "Save" with title "Study Connector"
         return text returned of answer
+        end timeout
     end run''', f"Enter the agent's {description} for {name}."], capture_output=True, text=True)
     if result.returncode:
         raise ConnectorError("Address entry cancelled. Open channel setup to try again.")
@@ -128,7 +130,8 @@ def configure_agent(name, channel):
         if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
             subprocess.run(["xcode-select", "--install"], capture_output=True)
             raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
-        subprocess.run([str(ROOT / "reader/install.sh")], check=True)
+        subprocess.run([str(ROOT / "reader/install.sh")], check=True, capture_output=True)
+        subprocess.run(["open", "-a", "Messages"], check=True)
     else:
         setup_channel(channel)
 
@@ -141,13 +144,16 @@ def setup_channel(channel):
             raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
         domain = f"gui/{os.getuid()}/{READER_LABEL}"
         if subprocess.run(["launchctl", "print", domain], capture_output=True).returncode:
-            terminal_command([str(ROOT / "reader/install.sh")])
+            subprocess.run([str(ROOT / "reader/install.sh")], check=True, capture_output=True)
         subprocess.run(["open", SETTINGS], check=True)
         return
     command = SETUP[channel]
     python = ROOT / ".venv/bin/python"
     prefix = [str(python) if python.exists() else sys.executable, "-m", "bench.cli"]
     if channel in {"hark", "muse", "wajo"}:
+        if not any(path.exists() for path in (Path("/Applications/Google Chrome.app"), Path.home() / "Applications/Google Chrome.app")):
+            subprocess.run(["open", "https://www.google.com/chrome/"], check=True)
+            raise ConnectorError("Install Google Chrome from the official page that just opened, then click Open channel setup again.")
         try:
             result = subprocess.run(prefix + [command], capture_output=True, text=True, timeout=240)
         except subprocess.TimeoutExpired:
@@ -156,16 +162,56 @@ def setup_channel(channel):
             raise ConnectorError("Could not complete sign-in. Check the dedicated Chrome window and try Open channel setup again.")
         return
     if channel == "whatsapp":
-        from bench.channels.whatsapp import BRIDGE_DIR
-
-        if not (BRIDGE_DIR / "bench-whatsapp").exists():
-            if not shutil.which("go"):
-                subprocess.run(["open", "https://go.dev/dl/"], check=True)
-                raise ConnectorError("Install Go using the macOS installer that just opened, then open channel setup again. WhatsApp needs it to build the connection program.")
-            command_line = shlex.join(prefix + ["whatsapp-install"]) + " && " + shlex.join(prefix + [command])
-            terminal_command(["/bin/sh", "-c", command_line])
-            return
-    terminal_command(prefix + [command])
+        from bench.channels import whatsapp
+        from bench.study_setup import qr_window
+        try:
+            if not whatsapp.BINARY.exists():
+                if not shutil.which("go"):
+                    subprocess.run(["open", "https://go.dev/dl/"], check=True)
+                    raise ConnectorError("Install Go with the official Mac installer that just opened, then click Open channel setup again. No Terminal commands are needed.")
+                whatsapp.install()
+            with qr_window("WhatsApp", "On your phone, open WhatsApp → Settings → Linked Devices → Link a Device. Scan this code; it refreshes automatically.") as show:
+                whatsapp.link(show=show)
+        except whatsapp.WhatsAppError as error:
+            raise ConnectorError("WhatsApp setup did not finish. Click Open channel setup to retry the QR code.") from error
+        return
+    if channel == "telegram":
+        import asyncio
+        from bench.channels import telegram
+        from bench.study_setup import qr_window
+        try:
+            telegram.api_credentials()
+        except telegram.TelegramError as error:
+            raise ConnectorError("Telegram API credentials are not configured on this Mac. Ask the study administrator to configure Telegram before connecting; a Telegram account login alone is not enough.") from error
+        def password(prompt):
+            result = subprocess.run(["osascript", "-e", '''on run argv
+              with timeout of 86400 seconds
+                text returned of (display dialog (item 1 of argv) default answer "" with hidden answer buttons {"Cancel", "Continue"} default button "Continue" cancel button "Cancel" with title "Telegram sign-in")
+              end timeout
+            end run''', prompt], capture_output=True, text=True)
+            if result.returncode:
+                raise ConnectorError("Telegram sign-in cancelled. Click Open channel setup to retry.")
+            return result.stdout.rstrip("\n")
+        try:
+            with qr_window("Telegram", "On your phone, open Telegram → Settings → Devices → Link Desktop Device. Scan this code.") as show:
+                asyncio.run(asyncio.wait_for(telegram.login(show_qr=show, ask_password=password), timeout=300))
+        except ConnectorError:
+            raise
+        except Exception as error:
+            raise ConnectorError("Telegram sign-in did not finish. Click Open channel setup to retry.") from error
+        return
+    if channel == "slack":
+        from bench.channels import slack
+        try:
+            # Validate the configured workspace and pin agent DMs without sending a message.
+            agents = list(load_agents().values())
+            with slack.SlackChannel(agents, send_via="api"):
+                pass
+            slack.sign_in(agents)
+        except slack.SlackError as error:
+            raise ConnectorError("Dots/Slack needs a valid Slack user token and the study workspace configured on this Mac. Ask the study administrator to check these, then click Open channel setup. Signing in to Slack alone is not sufficient.") from error
+        return
+    raise ConnectorError("This channel is not supported by Study setup.")
 
 
 def replies_for(snapshot, job):
@@ -202,11 +248,8 @@ def run_job(origin, credential, job):
         try:
             if configured:
                 setup_channel(agent.channel)
-            elif job["channel"] in {"hark", "muse", "wajo"}:
-                configure_agent(job["agent"], job["channel"])
             else:
-                terminal_command([sys.executable, "-m", "bench.study_connector", "--origin", origin,
-                                  "--configure-agent", job["agent"], "--channel", job["channel"]])
+                configure_agent(job["agent"], job["channel"])
         except ConnectorError as error:
             report("failed", error=str(error))
         except (OSError, subprocess.SubprocessError):

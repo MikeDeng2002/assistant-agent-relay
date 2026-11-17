@@ -1,7 +1,7 @@
 #!/bin/bash
 # Embedded in the signed Shortcuts download; no Terminal window is opened.
 set -euo pipefail
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 umask 077
 origin='https://restaurant-study-demo.onrender.com'
 base="$HOME/Library/Application Support/Study Connector"
@@ -12,23 +12,29 @@ trap 'rm -rf "$work"' EXIT
 
 # Get input before the download, so Run immediately gives visible feedback.
 if ! /usr/bin/osascript -e '
+with timeout of 86400 seconds
 tell application "Shortcuts"
 activate
-text returned of (display dialog "Copy a pairing code from the Study website and paste it below. Setup will then install the connector and open Muse. First-time setup may take a few minutes." default answer "" buttons {"Cancel", "Connect"} default button "Connect" cancel button "Cancel" with title "Connect Study · Muse")
+text returned of (display dialog "Copy a pairing code from the Study website and paste it below. Setup will then install the connector and pair this Mac. Keep the Study webpage open to continue with your selected agent. First-time setup may take a few minutes." default answer "" buttons {"Cancel", "Connect"} default button "Connect" cancel button "Cancel" with title "Connect Study")
 end tell
-' > "$work/code"; then
-  exit 0
+end timeout
+' > "$work/code" 2> "$work/dialog-error"; then
+  if /usr/bin/grep -q -- '(-128)' "$work/dialog-error"; then exit 0; fi
+  cat "$work/dialog-error" >&2
+  exit 1
 fi
-/usr/bin/osascript -e 'display notification "Installing Study Connector. Keep Shortcuts open; Muse will open when setup finishes." with title "Study · Setting up this Mac"' || true
+/usr/bin/osascript -e 'display notification "Installing Study Connector. Keep Shortcuts open; return to the Study webpage when setup finishes." with title "Study · Setting up this Mac"' || true
 if ! curl --fail --silent --show-error --location --proto '=https' --connect-timeout 20 --max-time 90 \
   https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh \
   -o "$work/install.sh" 2> "$log" || ! /bin/bash "$work/install.sh" "$origin" --terminal >> "$log" 2>&1; then
   /usr/bin/osascript - "$log" <<'APPLESCRIPT'
 on run argv
-  tell application "Shortcuts"
+  with timeout of 86400 seconds
+tell application "Shortcuts"
   activate
   set answer to display dialog "Installation could not finish. Check your internet connection and run Connect Study again. You do not need to open Terminal." buttons {"Close", "View details"} default button "Close" with title "Study · Setup interrupted" with icon caution
   end tell
+end timeout
   if button returned of answer is "View details" then
     do shell script "/usr/bin/open -a TextEdit " & quoted form of (item 1 of argv)
   end if
@@ -56,15 +62,19 @@ ORIGIN = 'https://restaurant-study-demo.onrender.com'
 
 def dialog(message, *, entry=False):
     script = '''on run argv
-      tell application "Shortcuts"
+      with timeout of 86400 seconds
+tell application "Shortcuts"
       activate
-      text returned of (display dialog (item 1 of argv) default answer "" buttons {"Cancel", "Connect"} default button "Connect" cancel button "Cancel" with title "Connect Study · Muse")
+      text returned of (display dialog (item 1 of argv) default answer "" buttons {"Cancel", "Connect"} default button "Connect" cancel button "Cancel" with title "Connect Study")
       end tell
+end timeout
     end run''' if entry else '''on run argv
-      tell application "Shortcuts"
+      with timeout of 86400 seconds
+tell application "Shortcuts"
       activate
       display dialog (item 1 of argv) buttons {"OK"} default button "OK" with title "Study Connector"
       end tell
+end timeout
     end run'''
     result = subprocess.run(['osascript', '-e', script, message], capture_output=True, text=True)
     if result.returncode:
@@ -75,20 +85,6 @@ def dialog(message, *, entry=False):
     return result.stdout.strip()
 
 try:
-    # Chrome is a separate browser profile. Never reuse the participant's regular profile.
-    chrome_paths = [Path('/Applications/Google Chrome.app'), Path.home() / 'Applications/Google Chrome.app']
-    if not any(path.exists() for path in chrome_paths):
-        dialog('Muse needs Google Chrome. The official download page will open next. Install Chrome, then run this shortcut again. No Terminal commands are needed.')
-        subprocess.run(['open', 'https://www.google.com/chrome/'], check=True)
-        raise SystemExit(0)
-
-    local = yaml.safe_load(LOCAL_AGENTS_FILE.read_text()) or {} if LOCAL_AGENTS_FILE.exists() else {}
-    entries = local.setdefault('agents', {})
-    if 'muse' not in entries:
-        entries['muse'] = {'channel': 'muse', 'handle': 'muse.ai'}
-        LOCAL_AGENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        store(LOCAL_AGENTS_FILE, local, yaml.safe_dump)
-
     code = Path(sys.argv[1]).read_text().strip()
     while True:
         if not CODE.fullmatch(code):
@@ -126,16 +122,8 @@ try:
     if loaded.returncode:
         raise RuntimeError('Pairing succeeded, but macOS could not start the background connector. Run this shortcut again. If macOS shows a background-item notice, allow Study Connector.')
 
-    from bench.channels.chrome import attach
-    with attach() as browser:
-        context = browser.contexts[0]
-        page = next((p for p in context.pages if urlsplit(p.url).hostname == 'muse.ai'), None)
-        if page is None:
-            page = context.new_page()
-            page.goto('https://muse.ai/', wait_until='domcontentloaded', timeout=60000)
-        page.bring_to_front()
-    dialog('This Mac is paired and Muse is open. Finish signing in to Muse, then return to Study and click Test connection. You can close Shortcuts; the connector runs in the background.')
-    print('Setup complete. Sign in to Muse, then click Test connection in Study.')
+    subprocess.run(['osascript', '-e', 'display notification "This Mac is paired. Return to Study for your selected agent’s login or setup." with title "Study Connector"'], check=False)
+    print('This Mac is paired. Return to Study and click Open channel setup if it has not opened automatically.')
 except Exception as error:
     # No tokens or pairing codes are included in errors or logs.
     dialog('Setup needs attention: ' + str(error)[:400] + '\n\nRun Connect Study again to retry. No Terminal commands are needed.')

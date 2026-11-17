@@ -17,7 +17,7 @@ def workflow():
     return {
         'WFWorkflowClientVersion': '3036.0.4.2',
         'WFWorkflowMinimumClientVersion': 900,
-        'WFWorkflowName': 'Connect Study - Muse',
+        'WFWorkflowName': 'Study Connect',
         'WFWorkflowIcon': {'WFWorkflowIconStartColor': 4282601983, 'WFWorkflowIconGlyphNumber': 59511},
         'WFWorkflowTypes': [],
         'WFWorkflowInputContentItemClasses': [],

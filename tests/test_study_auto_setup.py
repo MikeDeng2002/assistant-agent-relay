@@ -14,7 +14,7 @@ def test_auto_setup_respects_pairing_dialog_and_busy_jobs():
     script = '''
 const assert = require('node:assert/strict');
 let autoSetupAgent = null, selected = 'hark', actionPending = false;
-const webChannels = new Set(['hark','muse','wajo']);
+const labels = {hark:'Hark',muse:'Muse',wajo:'Wajo',imessage:'iMessage'};
 const dialog = {open:true};
 const picker = {selectedOptions:[{dataset:{channel:'hark'}}]};
 const pairLink = {closest:()=>dialog};
@@ -41,12 +41,13 @@ selected='instinct';
 picker.selectedOptions[0].dataset.channel='imessage';
 requestWebSetup();
 assert.equal(autoSetupAgent,null);
-assert.equal(calls.length,1);
+assert.equal(calls.length,2);
+assert.deepEqual(calls[1],['setup','instinct']);
 selected='muse';
 picker.selectedOptions[0].dataset.channel='muse';
 latest.device.verified=['muse'];
 requestWebSetup();
-assert.equal(calls.length,2);
-assert.deepEqual(calls[1],['setup','muse']);
+assert.equal(calls.length,3);
+assert.deepEqual(calls[2],['setup','muse']);
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True,text=True)

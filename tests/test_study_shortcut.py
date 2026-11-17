@@ -19,9 +19,9 @@ def test_signed_shortcut_download_is_public_and_preserves_bytes(tmp_path, monkey
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with urlopen(f'http://{server.host}/study-muse.shortcut') as response:
+        with urlopen(f'http://{server.host}/study-setup.shortcut') as response:
             assert response.status == 200
-            assert response.headers['Content-Disposition'] == 'attachment; filename="Connect Study - Muse.shortcut"'
+            assert response.headers['Content-Disposition'] == 'attachment; filename="Study Connect.shortcut"'
             assert response.read() == (ROOT / 'bench/Connect Study - Muse.shortcut').read_bytes()
     finally:
         server.shutdown()
@@ -29,7 +29,7 @@ def test_signed_shortcut_download_is_public_and_preserves_bytes(tmp_path, monkey
         thread.join()
 
 
-def test_muse_shortcut_keeps_pairing_code_visible_and_other_channels_manual():
+def test_shared_shortcut_keeps_pairing_code_visible_for_supported_channels():
     source = (ROOT / 'bench/study_connect.js').read_text()
     update = source[source.index('  function updateView()'):source.index('  function renderMessages()')]
     script = '''
@@ -41,7 +41,7 @@ let codeExpiry=Date.now()+300000,shortcutSupported=true,lastShortcutMode=null;
 const picker={selectedOptions:[{dataset:{channel:'muse'}}]};
 const dialog={querySelector:el};
 const status={},setup={},test={},disconnect={},direction={},codeBox={},codeText={textContent:'test-code'};
-const taskNavigation={};const help={muse:'Sign in to Muse'};const startCommand='run';
+const labels={muse:'Muse',whatsapp:'WhatsApp'};const taskNavigation={};const help={muse:'Sign in to Muse'};const startCommand='run';
 const renderMessages=()=>{};
 ''' + update + '''
 updateView();
@@ -49,15 +49,17 @@ assert.equal(el('#connector-shortcut').hidden,false);
 assert.equal(el('#connector-install-manual').open,false);
 assert.equal(el('#connector-terminal').open,false);
 assert.equal(codeBox.hidden,false);
+assert.equal(el('#connector-run-shortcut').hidden,false);
 assert.match(el('#connector-code-help').textContent,/Shortcuts/);
 // Polling must not collapse a fallback the participant has explicitly opened.
 el('#connector-install-manual').open=true;
 updateView();assert.equal(el('#connector-install-manual').open,true);
 picker.selectedOptions[0].dataset.channel='whatsapp';selected='whatsapp';updateView();
-assert.equal(el('#connector-shortcut').hidden,true);
+assert.equal(el('#connector-shortcut').hidden,false);
+assert.equal(el('#connector-run-shortcut').hidden,false);
 assert.equal(el('#connector-install-manual').open,true);
-assert.equal(el('#connector-terminal').open,true);
-assert.match(el('#connector-code-help').textContent,/Terminal/);
+assert.equal(el('#connector-terminal').open,false);
+assert.match(el('#connector-code-help').textContent,/Shortcuts/);
 codeExpiry=Date.now()-1;updateView();assert.equal(codeBox.hidden,true);
 latest.device={online:true,agents:{whatsapp:'whatsapp'},verified:[]};updateView();
 assert.equal(el('#connector-install').hidden,true);

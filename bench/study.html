@@ -292,21 +292,21 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
     <h3 id="connector-install-title">Set up this Mac</h3>
     <div id="connector-shortcut" hidden>
-      <p>Connect Muse with a ready-made shortcut. No Terminal commands to copy.</p>
-      <a class="btn primary" href="/study-muse.shortcut" download="Connect Study - Muse.shortcut">Download Muse shortcut</a>
+      <p>Add the ready-made shortcut, then start it directly from this webpage. No Downloads folder or Terminal needed.</p>
+      <a class="btn primary" href="https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5" target="_blank" rel="noopener">1. Add Study shortcut</a>
       <ol class="help">
-        <li><strong>Add the shortcut.</strong> Open the download and click <strong>Add Shortcut</strong>. You do not need to create or edit anything.</li>
-        <li><strong>Allow scripts (first time only).</strong> In the Mac’s <strong>Shortcuts</strong> app, open <strong>Shortcuts → Settings → Advanced</strong> and turn on <strong>Allow Running Scripts</strong> (快捷指令 → 设置 → 高级 → 允许运行脚本). If it is already on, continue to the next step.</li>
-        <li><strong>Copy your pairing code.</strong> Back on this webpage, click <strong>Generate pairing code</strong>, then <strong>Copy pairing code</strong>.</li>
-        <li><strong>Run the shortcut.</strong> In <strong>Shortcuts → All Shortcuts</strong> (所有快捷指令), find <strong>Connect Study - Muse</strong>. <strong>Right-click the shortcut card → Run</strong> (右键卡片 → 运行, the first menu item). On a trackpad, click with two fingers; you can also hold Control while clicking. If you opened the editor instead, click <strong>▶︎ in the editor’s top toolbar</strong>. Adding the shortcut does not run it automatically.</li>
-        <li><strong>Connect and sign in.</strong> Paste the code into the pop-up and click <strong>Connect</strong>. Setup installs the connector and opens Muse. Sign in, then return here and click <strong>Test connection</strong>. If a scripts permission warning appears, complete step 2 and run the shortcut again.</li>
+        <li><strong>Add once.</strong> Click the button above, then <strong>Get Shortcut → Add Shortcut</strong> on Apple’s page. Keep the name <strong>Study Connect</strong>. Return to this Study tab after adding it.</li>
+        <li><strong>Allow scripts (first time only).</strong> In <strong>Shortcuts → Settings → Advanced</strong>, turn on <strong>Allow Running Scripts</strong> (快捷指令 → 设置 → 高级 → 允许运行脚本). If it is already on, continue.</li>
+        <li><strong>Copy and run here.</strong> Click <strong>Generate pairing code</strong> below, copy it, then click <strong>Run Study setup</strong> on this webpage. If your browser asks, choose <strong>Open Shortcuts</strong>. Paste the code into the pop-up and click <strong>Connect</strong>.</li>
+        <li><strong>Finish your agent’s setup.</strong> Keep this webpage open. After pairing, it opens the selected agent’s login, QR code, or setup prompts. If nothing opens, click <strong>Open channel setup</strong>. Complete setup, then click <strong>Test connection</strong>.</li>
       </ol>
+      <p class="help">Adding does not start setup automatically. The Run button below opens the pairing pop-up directly; you do not need to find a Run button in the Shortcuts app.</p>
       <details class="help">
-        <summary>Missing app or other setup prompts?</summary>
-        <p>Requires macOS 12 or later, Apple Shortcuts, and Google Chrome. Approve the macOS prompts for this shortcut.</p>
-        <p>If Shortcuts is unavailable on this Mac, use the Terminal option below. If Chrome is missing, setup opens its official download page.</p>
+        <summary>Trouble adding or running the shortcut?</summary>
+        <p>Requires macOS 12 or later and Apple Shortcuts. Web agents also need Google Chrome. If the Run button says the shortcut is missing, add <strong>Study Connect</strong> using the button above and keep its name unchanged.</p>
+        <p>You can also <a href="/study-setup.shortcut" download="Study Connect.shortcut">download the shortcut file</a>, open it and add it. If Shortcuts is unavailable, use the Terminal option below. If Chrome is missing, setup opens its official download page.</p>
       </details>
-      <p class="help">Muse setup only. This shortcut does not complete WhatsApp, iMessage, or other agents’ setup.</p>
+      <p class="help">One shortcut pairs this Mac for all agents. Each agent still needs its own login or permissions. WhatsApp may require Go; Dots/Slack and Telegram need study administrator configuration.</p>
     </div>
     <details id="connector-install-manual" open>
       <summary>Set up using Terminal</summary>
@@ -326,6 +326,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <section id="connector-code-box" class="connector-recovery" hidden>
     <p>Pairing code <code id="connector-code"></code></p>
     <button type="button" class="btn primary" id="connector-copy-code">Copy pairing code</button>
+    <a class="btn primary" id="connector-run-shortcut" href="shortcuts://run-shortcut?name=Study%20Connect" hidden>Run Study setup</a>
     <p class="help" id="connector-code-help"></p>
   </section>
   <details id="connector-terminal" class="connector-recovery" hidden>

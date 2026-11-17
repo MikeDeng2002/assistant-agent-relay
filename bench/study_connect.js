@@ -5,12 +5,12 @@ const studyConnect = (() => {
     muse: 'muse.ai', hark: 'hark.com', wajo: 'wajo.ai', telegram: 'Telegram',
   };
   const help = {
-    whatsapp: 'Scan the QR code in Terminal with WhatsApp → Linked Devices on your phone.',
+    whatsapp: 'Scan the QR code in the browser tab with WhatsApp → Settings → Linked Devices on your phone. If Go is missing, install it from the official page that opens and try setup again.',
     slack: 'Sign in to the workspace containing your Dot in the dedicated Chrome window. The connector uses your locally configured Slack app token.',
     muse: 'Sign in to Muse in the dedicated Chrome window and wait for the main chat to open.',
     hark: 'Sign in to Hark in the dedicated Chrome window.',
     wajo: 'Sign in to Wajo in the dedicated Chrome window.',
-    telegram: 'Sign in to Telegram in Terminal when prompted.',
+    telegram: 'Scan the QR code in the browser tab with Telegram → Settings → Devices on your phone. Enter your two-step password in the Mac pop-up if prompted. Telegram API credentials must be configured by the study administrator.',
   };
   const url = '/api/study/connection';
   let latest = { device: null, jobs: [] };
@@ -27,7 +27,7 @@ const studyConnect = (() => {
     if (!mounted) return;
     const { device, jobs } = latest;
     const channel = picker.selectedOptions[0]?.dataset.channel;
-    const useShortcut = shortcutSupported && channel === 'muse';
+    const useShortcut = shortcutSupported && Boolean(labels[channel]);
     dialog.querySelector('#connector-shortcut').hidden = !useShortcut;
     if (lastShortcutMode !== useShortcut) {
       dialog.querySelector('#connector-install-manual').open = !useShortcut;
@@ -80,8 +80,9 @@ const studyConnect = (() => {
       'If Terminal is already asking for a pairing code, paste the code below. Otherwise, run this command first. The code expires after five minutes.';
     dialog.querySelector('#connector-manual-command').textContent = reconnect ? startCommand : startCommand + ' --pair';
     codeBox.hidden = !hasCode;
+    dialog.querySelector('#connector-run-shortcut').hidden = !useShortcut || !hasCode;
     dialog.querySelector('#connector-code-help').textContent = useShortcut ?
-      'Run Connect Study - Muse in Shortcuts and paste this code into the pop-up. It expires after five minutes; if needed, generate a new code here without reinstalling.' :
+      'Copy this code, then click Run Study setup above. Choose Open Shortcuts if prompted and paste the code into the pop-up. It expires after five minutes; if needed, generate a new code here without reinstalling.' :
       'Paste this code when Terminal asks. The code expires after five minutes.';
     if (!hasCode) codeText.textContent = '';
     if (!device && codeExpiry && !hasCode && !lastError) {
@@ -135,7 +136,7 @@ const studyConnect = (() => {
 
   function requestWebSetup() {
     const channel = picker.selectedOptions[0]?.dataset.channel;
-    autoSetupAgent = webChannels.has(channel) ? selected : null;
+    autoSetupAgent = labels[channel] ? selected : null;
     maybeOpenWebSetup();
   }
 
