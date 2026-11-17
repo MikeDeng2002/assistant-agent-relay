@@ -49,5 +49,8 @@ latest.device.verified=['muse'];
 requestWebSetup();
 assert.equal(calls.length,3);
 assert.deepEqual(calls[2],['setup','muse']);
+latest.jobs=[{agent:'muse',kind:'setup',state:'queued'}];
+requestWebSetup();assert.equal(autoSetupAgent,null);
+latest.jobs=[];maybeOpenWebSetup();assert.equal(calls.length,3);
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True,text=True)

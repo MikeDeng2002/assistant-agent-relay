@@ -234,7 +234,7 @@ class StudyHandler(BaseHTTPRequestHandler):
             raise RequestError(404, "The Study Connector is unavailable.")
         action = path.removeprefix("/api/connector/")
         if action == "pair":
-            return self.json(200, devices.pair(body.get("code"), body.get("agents"), self.server.channels))
+            return self.json(200, devices.pair(body.get("code"), body.get("agents"), self.server.channels, self.server.spec["task"]))
         if action in ("poll", "report"):
             credential = self.headers.get("Authorization", "").removeprefix("Bearer ")
             return self.json(200, devices.exchange(credential, action, body, self.server.channels))
@@ -364,7 +364,10 @@ class StudyHandler(BaseHTTPRequestHandler):
             devices = self.server.devices
             action = path.removeprefix("/api/study/connection/")
             if action == "code":
-                return self.json(200, devices.code(owner))
+                agent = body.get("agent")
+                if agent is not None and (not isinstance(agent, str) or agent not in self.server.channels):
+                    raise RequestError(400, "Choose an available agent before pairing.")
+                return self.json(200, devices.code(owner, agent))
             if action == "launch" and self.server.local_connector:
                 code = body.get("code")
                 link = "study-connector://open"

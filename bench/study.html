@@ -312,7 +312,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <section class="connector-step" id="connector-install" aria-labelledby="connector-install-title">
     <div class="connector-stephead"><span class="connector-stepnum" aria-hidden="true">1</span><div><h3 id="connector-install-title">Add Study Connect</h3><p>Only needed the first time</p></div></div>
     <div id="connector-shortcut" hidden>
-      <div class="row"><a class="btn primary" href="https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5" target="_blank" rel="noopener">Add Study Connect ↗</a><span class="small muted">Already added? Go to step 2.</span></div>
+      <div class="row"><a id="connector-add-shortcut" class="btn primary" href="https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5" target="_blank" rel="noopener">Add Study Connect ↗</a><span class="small muted"><a href="#connector-pair-step">Already added? Run from step 2 ↓</a></span></div>
       <p class="help">Click <strong>Get Shortcut → Add Shortcut</strong>, then come back here.</p>
       <p class="help connector-permission"><strong>First use:</strong> enable <strong>Allow Running Scripts</strong> in Shortcuts → Settings → Advanced.</p>
 
@@ -332,12 +332,12 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   </section>
   <section class="connector-step" id="connector-pair-step" aria-labelledby="connector-pair-title">
     <div class="connector-stephead"><span class="connector-stepnum" aria-hidden="true">2</span><div><h3 id="connector-pair-title">Pair this Mac</h3><p>Copy → Run → Paste in the pop-up</p></div></div>
-    <button type="button" class="btn primary" id="connector-pair">Generate pairing code</button>
+    <div class="row connector-controls"><button type="button" class="btn" id="connector-copy-code">Copy pairing code</button><a class="btn primary" id="connector-run-shortcut" href="shortcuts://run-shortcut?name=Study%20Connect">Run Study setup ↗</a></div>
+    <p class="help" id="connector-code-help"></p>
+    <button type="button" class="btn small" id="connector-pair" hidden>Generate new pairing code</button>
     <section id="connector-code-box" class="connector-recovery" hidden>
       <p class="connector-code-label">Your pairing code · valid for 5 minutes</p>
       <code id="connector-code" class="connector-code-value"></code>
-      <div class="row connector-controls"><button type="button" class="btn" id="connector-copy-code">Copy pairing code</button><a class="btn primary" id="connector-run-shortcut" href="shortcuts://run-shortcut?name=Study%20Connect" hidden>Run Study setup ↗</a></div>
-      <p class="help" id="connector-code-help"></p>
     </section>
   </section>
   <details id="connector-terminal" class="connector-recovery" hidden>

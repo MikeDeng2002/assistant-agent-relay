@@ -51,6 +51,9 @@ class Devices:
                 create index if not exists jobs_device_state on jobs (device, state, created);
             """)
 
+            if 'agent' not in {row[1] for row in db.execute('pragma table_info(codes)')}:
+                db.execute('alter table codes add column agent text')
+
     @contextmanager
     def transaction(self):
         db = sqlite3.connect(self.path, timeout=5)
@@ -62,12 +65,13 @@ class Devices:
         finally:
             db.close()
 
-    def code(self, owner):
+    def code(self, owner, agent=None):
         code = secrets.token_urlsafe(18)
         now = time.time()
         with self.transaction() as db:
             db.execute("delete from codes where owner = ? or expires <= ?", (owner, now))
-            db.execute("insert into codes values (?, ?, ?)", (digest(code), owner, now + CODE_TTL))
+            db.execute("insert into codes (code, owner, expires, agent) values (?, ?, ?, ?)",
+                       (digest(code), owner, now + CODE_TTL, agent))
         return {"code": code, "expires_in": CODE_TTL}
 
     def check_code(self, owner, code):
@@ -79,23 +83,30 @@ class Devices:
         if not valid:
             raise DeviceError(403, "Generate a new pairing code in Study.")
 
-    def pair(self, code, agents, configured):
+    def pair(self, code, agents, configured, task=""):
         if not isinstance(code, str) or len(code) != 24:
             raise DeviceError(400, "Enter the pairing code shown in Study.")
         agents = self.agents(agents, configured)
         now = time.time()
         credential = secrets.token_urlsafe(32)
         with self.transaction() as db:
-            pair = db.execute("select owner from codes where code = ? and expires > ?",
+            pair = db.execute("select owner, agent from codes where code = ? and expires > ?",
                               (digest(code), now)).fetchone()
             if not pair:
                 raise DeviceError(403, "This pairing code expired or was used. Generate a new code in Study.")
-            owner = pair["owner"]
+            owner, target = pair["owner"], pair["agent"]
+            if target is not None and target not in configured:
+                raise DeviceError(400, "This agent is no longer available. Generate a new pairing code.")
             self.remove(db, owner, now)
             db.execute("delete from codes where owner = ?", (owner,))
+            device_id = uuid4().hex
             db.execute("insert into devices values (?, ?, ?, ?, ?, ?, ?)",
-                       (uuid4().hex, owner, digest(credential), now + DEVICE_TTL, now, json.dumps(agents), "[]"))
-        return {"credential": credential}
+                       (device_id, owner, digest(credential), now + DEVICE_TTL, now, json.dumps(agents), "[]"))
+            if target is not None:
+                # Pairing and setup are one transaction: no browser polling is required.
+                db.execute("""insert into jobs values (?, ?, ?, ?, ?, 'setup', '', 'CHANNEL SETUP', ?, ?, ?, 'queued', null, '[]', null)""",
+                           (uuid4().hex, owner, device_id, target, configured[target], task, now, now))
+        return {"credential": credential, "setup_queued": target is not None}
 
     @staticmethod
     def agents(value, configured):

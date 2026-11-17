@@ -78,7 +78,9 @@ const studyConnect = (() => {
     const pair = dialog.querySelector('#connector-pair');
     const hasCode = !device && Date.now() < codeExpiry;
     const reconnect = Boolean(device && !device.online);
-    pair.hidden = Boolean(device);
+    pair.hidden = Boolean(device) || !hasCode;
+    picker.disabled = actionPending;
+    dialog.querySelector('#connector-copy-code').disabled = actionPending;
     pair.disabled = actionPending;
     pair.className = hasCode ? 'btn small' : 'btn primary';
     pair.textContent = hasCode || codeExpiry ? 'Generate new pairing code' : 'Generate pairing code';
@@ -90,9 +92,9 @@ const studyConnect = (() => {
       'If Terminal is already asking for a pairing code, paste the code below. Otherwise, run this command first. The code expires after five minutes.';
     dialog.querySelector('#connector-manual-command').textContent = reconnect ? startCommand : startCommand + ' --pair';
     codeBox.hidden = !hasCode;
-    dialog.querySelector('#connector-run-shortcut').hidden = !useShortcut || !hasCode;
+    dialog.querySelector('#connector-run-shortcut').hidden = !useShortcut || Boolean(device);
     dialog.querySelector('#connector-code-help').textContent = useShortcut ?
-      'Copy the code → Run Study setup → paste it into the pop-up. Choose Open Shortcuts if asked.' :
+      'Copy pairing code → Run Study setup → paste and click Connect. Your selected agent opens automatically.' :
       'Paste this code when Terminal asks. The code expires after five minutes.';
     if (!hasCode) codeText.textContent = '';
     if (!device && codeExpiry && !hasCode && !lastError) {
@@ -152,6 +154,10 @@ const studyConnect = (() => {
 
   function maybeOpenWebSetup() {
     if (!autoSetupAgent || !dialog.open || actionPending || !latest.device?.online) return;
+    if (latest.jobs.some(job => job.agent === autoSetupAgent && job.kind === 'setup' && ['queued', 'running'].includes(job.state))) {
+      autoSetupAgent = null;
+      return;
+    }
     if (latest.jobs.some(job => ['queued', 'running'].includes(job.state))) return;
     const agent = autoSetupAgent;
     autoSetupAgent = null;
@@ -223,13 +229,17 @@ const studyConnect = (() => {
     selected = picker.value;
     picker.onchange = () => {
       selected = picker.value;
+      codeExpiry = 0;
+      codeText.textContent = '';
+      dialog.querySelector('#connector-copy-code').textContent = 'Copy pairing code';
       lastError = '';
       updateView();
       requestWebSetup();
     };
     dialog.querySelector('#connector-pair').onclick = async () => {
       await action(async () => {
-        const {code, expires_in} = await studyAuth.api(url + '/code', {});
+        const {code, expires_in} = await studyAuth.api(url + '/code', {agent: selected});
+        autoSetupAgent = null; // The server queues setup when this code is redeemed.
         codeExpiry = Date.now() + expires_in * 1000;
         codeText.textContent = code;
         dialog.querySelector('#connector-copy-code').textContent = 'Copy pairing code';
@@ -251,7 +261,10 @@ const studyConnect = (() => {
       'cd "$HOME/Library/Application Support/Study Connector/assistant-agent-relay" && .venv/bin/python -m bench.study_connector --origin ') + quote(location.origin);
     copyButton('#connector-copy-install', installText);
     copyButton('#connector-copy-start', commandText);
-    copyButton('#connector-copy-code', codeText);
+    dialog.querySelector('#connector-copy-code').onclick = copyPairingCode;
+    dialog.querySelector('#connector-add-shortcut').onclick = () => {
+      dialog.querySelector('#connector-pair-step').scrollIntoView({block: 'nearest'});
+    };
     setup.onclick = () => {
       autoSetupAgent = null;
       action(() => queue('setup', selected));
@@ -271,6 +284,25 @@ const studyConnect = (() => {
     });
     refresh();
     setInterval(refresh, 2500);
+  }
+
+  async function copyPairingCode() {
+    await action(async () => {
+      if (!codeText.textContent || Date.now() >= codeExpiry) {
+        const {code, expires_in} = await studyAuth.api(url + '/code', {agent: selected});
+        codeExpiry = Date.now() + expires_in * 1000;
+        codeText.textContent = code;
+        autoSetupAgent = null;
+      }
+      const button = dialog.querySelector('#connector-copy-code');
+      try {
+        await navigator.clipboard.writeText(codeText.textContent);
+        button.textContent = 'Copied — click Run Study setup';
+      } catch {
+        button.textContent = 'Select the code below to copy';
+      }
+    });
+    if (!codeBox.hidden) codeBox.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }
 
   function copyButton(selector, source) {

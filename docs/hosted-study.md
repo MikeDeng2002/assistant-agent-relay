@@ -185,8 +185,9 @@ Rebuilding the file does not update the public iCloud snapshot: share the new
 script and update the page link too. Pairing dialogs have an explicit long
 AppleEvent timeout; cancellation is separate from errors.
 
-Keep the Study tab open: after pairing, its polling starts the selected agent’s
-setup once. **Open channel setup** retries. Muse, Hark and Wajo use dedicated
+The pairing code records the selected agent. Redeeming it atomically queues
+that agent’s setup on the server, so the connector opens its login/setup even
+if the Study tab has been closed. **Open channel setup** retries. Muse, Hark and Wajo use dedicated
 Chrome sign-in; Chrome must be installed. WhatsApp and Telegram display QR codes
 on a temporary loopback-only browser page, with an unguessable path, Host check,
 no caching and no remote assets. QR codes never go to the Study server.

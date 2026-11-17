@@ -109,3 +109,38 @@ def test_clear_connection_tests_is_owner_scoped_and_keeps_task_messages(tmp_path
     other = devices.status('other-user')
     assert other['device'] is not None
     assert len(other['jobs']) == 1
+
+
+def test_pairing_atomically_queues_selected_setup_without_browser(tmp_path):
+    devices = Devices(tmp_path / 'devices.db')
+    agents = {'muse': 'muse', 'hark': 'hark'}
+    code = devices.code('participant', 'muse')['code']
+    # The Mac need not have configured this agent yet. Setup does that next.
+    paired = devices.pair(code, {}, agents, 'Restaurant v1')
+    assert paired['setup_queued'] is True
+    job = devices.exchange(paired['credential'], 'poll', {'agents': {}}, agents)['job']
+    assert (job['agent'], job['channel'], job['kind'], job['task']) == ('muse', 'muse', 'setup', 'Restaurant v1')
+    assert job['prompt'] == ''  # Pairing must never send a test/chat message.
+    assert devices.exchange(paired['credential'], 'poll', {'agents': {}}, agents)['job'] is None
+    with pytest.raises(DeviceError):
+        devices.pair(code, {}, agents)
+
+
+def test_legacy_pairing_codes_still_work_and_schema_migrates(tmp_path):
+    import sqlite3
+    path = tmp_path / 'legacy.db'
+    with sqlite3.connect(path) as db:
+        db.execute('create table codes (code text primary key, owner text not null unique, expires real not null)')
+    devices = Devices(path)
+    result = devices.pair(devices.code('legacy')['code'], {}, {}, 'Task')
+    assert result['setup_queued'] is False
+    assert devices.status('legacy')['jobs'] == []
+
+
+def test_pairing_rejects_removed_agent_before_consuming_code(tmp_path):
+    devices = Devices(tmp_path / 'devices.db')
+    code = devices.code('participant', 'muse')['code']
+    with pytest.raises(DeviceError, match='no longer available'):
+        devices.pair(code, {}, {})
+    devices.check_code('participant', code)
+    assert devices.status('participant')['device'] is None
