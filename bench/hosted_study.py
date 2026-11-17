@@ -380,7 +380,7 @@ class StudyHandler(BaseHTTPRequestHandler):
                     raise RequestError(503, "Could not open Study Connector. Check that it is installed on this Mac.") from None
                 return self.json(200, {})
             if action == "disconnect":
-                devices.disconnect(owner)
+                devices.disconnect(owner, clear_tests=body.get("clear_tests") is True)
                 return self.json(200, {})
             if action == "job":
                 return self.json(200, devices.queue(owner, self.server.channels, self.server.spec["task"], body))

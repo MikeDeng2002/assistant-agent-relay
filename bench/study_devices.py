@@ -108,10 +108,12 @@ class Devices:
         db.execute("""update jobs set state = 'failed', updated = ?, error = 'Mac disconnected.'
                       where owner = ? and state in ('queued', 'running')""", (now, owner))
 
-    def disconnect(self, owner):
+    def disconnect(self, owner, *, clear_tests=False):
         with self.transaction() as db:
             self.remove(db, owner, time.time())
             db.execute("delete from codes where owner = ?", (owner,))
+            if clear_tests:
+                db.execute("delete from jobs where owner = ? and kind in ('setup', 'test')", (owner,))
 
     @staticmethod
     def expire(db, owner, now):

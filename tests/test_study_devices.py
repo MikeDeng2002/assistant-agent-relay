@@ -89,3 +89,23 @@ def test_draft_failure_is_actionable_without_leaking_local_error_text():
     assert not send_failure(progress | {'sent_at': 'now'}, 'muse').startswith('Nothing was sent:')
     # Never relay unknown errors, which may contain local paths or secrets.
     assert 'private-token' not in send_failure({'error': 'private-token'}, 'muse')
+
+
+def test_clear_connection_tests_is_owner_scoped_and_keeps_task_messages(tmp_path):
+    devices = Devices(tmp_path / 'devices.db')
+    agents = {'muse': 'muse'}
+    for owner in ('reset-user', 'other-user'):
+        devices.pair(devices.code(owner)['code'], agents, agents)
+        devices.queue(owner, agents, 'Task', {'kind': 'test', 'agent': 'muse'})
+    with devices.transaction() as db:
+        # Keep a task record alongside the disposable connection diagnostics.
+        db.execute("update jobs set kind = 'run' where owner = 'reset-user'")
+        db.execute("update jobs set state = 'done' where owner = 'reset-user'")
+    devices.queue('reset-user', agents, 'Task', {'kind': 'setup', 'agent': 'muse'})
+    devices.disconnect('reset-user', clear_tests=True)
+    reset = devices.status('reset-user')
+    assert reset['device'] is None
+    assert [job['kind'] for job in reset['jobs']] == ['run']
+    other = devices.status('other-user')
+    assert other['device'] is not None
+    assert len(other['jobs']) == 1
