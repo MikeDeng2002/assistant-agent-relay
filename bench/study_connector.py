@@ -30,6 +30,7 @@ SETUP = {
     "wajo": "wajo-login", "telegram": "telegram-login", "whatsapp": "whatsapp-link",
 }
 SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+READER_LABEL = "local.personal-agent-benchmark.bench-reader"
 
 
 class ConnectorError(Exception):
@@ -138,7 +139,7 @@ def setup_channel(channel):
         if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode:
             subprocess.run(["xcode-select", "--install"], capture_output=True)
             raise ConnectorError("Finish installing Apple Command Line Tools in the Mac dialog, then open channel setup again.")
-        domain = f"gui/{os.getuid()}/local.personal-agent-benchmark.bench-reader"
+        domain = f"gui/{os.getuid()}/{READER_LABEL}"
         if subprocess.run(["launchctl", "print", domain], capture_output=True).returncode:
             terminal_command([str(ROOT / "reader/install.sh")])
         subprocess.run(["open", SETTINGS], check=True)
@@ -217,6 +218,14 @@ def run_job(origin, credential, job):
     if not configured:
         report("failed", error="This agent is missing from the Mac’s configuration. Open channel setup and try again.")
         return
+
+    if job["kind"] == "test" and agent.channel == "imessage":
+        service = f"gui/{os.getuid()}/{READER_LABEL}"
+        try:
+            subprocess.run(["launchctl", "kickstart", "-k", service], check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError):
+            report("failed", error="Could not restart bench-reader. Click Set up iMessage and finish setup on your Mac, then try again.")
+            return
 
     console = Console({agent.name: agent}, snapshot_links=False, jobs_dir=STATE / "jobs")
     console.start()

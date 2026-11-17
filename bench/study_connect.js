@@ -5,7 +5,6 @@ const studyConnect = (() => {
     muse: 'muse.ai', hark: 'hark.com', wajo: 'wajo.ai', telegram: 'Telegram',
   };
   const help = {
-    imessage: 'Sign in to Messages. Allow the reader in Full Disk Access, then allow automation when macOS asks to control Messages.',
     whatsapp: 'Scan the QR code in Terminal with WhatsApp → Linked Devices on your phone.',
     slack: 'Sign in to the workspace containing your Dot in the dedicated Chrome window. The connector uses your locally configured Slack app token.',
     muse: 'Sign in to Muse in the dedicated Chrome window and wait for the main chat to open.',
@@ -38,13 +37,18 @@ const studyConnect = (() => {
       job?.state === 'failed' ? job.error :
       verified ? 'Connected · test reply received' :
       available ? 'Mac online · ready to test' : 'Mac online · this agent is not configured on the Mac.');
+    const isIMessage = channel === 'imessage';
+    const showIMessageSteps = device?.online && isIMessage && !verified;
+    dialog.querySelector('#connector-imessage-steps').hidden = !showIMessageSteps;
+    dialog.querySelector('#connector-imessage-reader').hidden = !showIMessageSteps;
+    setup.textContent = isIMessage ? 'Set up iMessage' : 'Open channel setup';
     let instructions = help[channel] || '';
     if (device?.online && !available) {
       instructions = 'Open channel setup and finish configuring this agent on your Mac. ' + instructions;
     } else if (job?.kind === 'setup' && job.state === 'done' && !verified) {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
-    direction.hidden = !device?.online;
+    direction.hidden = !device?.online || Boolean(showIMessageSteps);
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
     renderMessages();
     dialog.querySelector('#connector-install').hidden = Boolean(device);

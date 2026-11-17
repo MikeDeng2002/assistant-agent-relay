@@ -279,6 +279,16 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <label>Agent<select id="connector-agent"></select></label>
   <p id="connector-status" class="connector-status" role="status"></p>
   <p id="connector-help" class="help"></p>
+  <ol id="connector-imessage-steps" class="help" hidden>
+    <li>Click <strong>Set up iMessage</strong>. Enter the agent’s phone number or email if prompted.</li>
+    <li>Sign in to Messages if needed. In the <strong>Full Disk Access</strong> window that opens, add or enable <code>bench-reader</code>.</li>
+    <li>Back here, click <strong>Test connection</strong> to restart the reader and check for a reply. If macOS asks to let the connector control Messages, click <strong>Allow</strong>.</li>
+  </ol>
+  <details id="connector-imessage-reader" class="help" hidden>
+    <summary>Where to find bench-reader</summary>
+    <p>In Full Disk Access, click <strong>+</strong>, press <strong>⌘⇧G</strong>, then paste this path and click <strong>Open</strong>.</p>
+    <p><code>~/Library/Application Support/bench-reader/bench-reader</code></p>
+  </details>
   <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
     <h3 id="connector-install-title">Install Study Connector in Terminal</h3>
     <p>Copy the command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
