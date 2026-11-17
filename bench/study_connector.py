@@ -231,6 +231,17 @@ def replies_for(snapshot, job):
     return []
 
 
+def send_failure(progress, channel):
+    """Give actionable, known-safe guidance without exporting arbitrary local errors."""
+    name = {"muse": "Muse", "hark": "Hark", "wajo": "Wajo", "slack": "Slack"}.get(channel)
+    draft_error = f"{name}'s message box already has text in it. Send or delete it in Chrome, then try again."
+    if name and not progress.get("sent_at") and progress.get("error") == draft_error:
+        return (f"Nothing was sent: {name}'s message box contains an unsent draft. "
+                "In the dedicated Chrome window, save the draft elsewhere or finish sending it yourself, "
+                "then leave the message box empty and retry. Study will not overwrite your draft.")
+    return "The send could not be confirmed. Open channel setup, then check the conversation before retrying."
+
+
 def run_job(origin, credential, job):
     def report(state, *, sent_at=None, replies=None, error=None):
         body = {"id": job["id"], "state": state, "sent_at": sent_at, "replies": replies or [], "error": error}
@@ -293,7 +304,7 @@ def run_job(origin, credential, job):
             if progress["state"] in ("done", "failed", "stopped", "cancelled"):
                 if progress["state"] != "done" or not sent_at:
                     report("failed", sent_at=sent_at, replies=replies,
-                           error="The send could not be confirmed. Open channel setup, then check the conversation before retrying.")
+                           error=send_failure(progress, agent.channel))
                 elif job["kind"] == "test":
                     report("failed", sent_at=sent_at, error="The test message was sent, but the expected reply did not arrive.")
                 else:

@@ -58,6 +58,9 @@ const studyConnect = (() => {
     }
     direction.hidden = !device?.online || Boolean(showIMessageSteps);
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
+    dialog.querySelector('#connector-next-help').textContent = verified ?
+      'Next: click ' + (taskNavigation?.label || 'Continue to task') + '. Every agent selected on the session page must pass its own connection test before the task begins.' :
+      'After pairing: finish signing in or scanning the QR code, leave the agent’s message box empty, then click Test connection once. Wait for Connected · test reply received. The Continue button appears after a successful test.';
     renderMessages();
     dialog.querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
@@ -109,7 +112,7 @@ const studyConnect = (() => {
       fragment.append(heading);
       if (job.prompt) {
         const prompt = document.createElement('p');
-        prompt.textContent = `You: ${job.prompt}`;
+        prompt.textContent = `${job.sent_at ? 'You' : 'Requested message (send not confirmed)'}: ${job.prompt}`;
         fragment.append(prompt);
       }
       for (const reply of job.replies || []) {

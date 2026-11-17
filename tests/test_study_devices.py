@@ -76,3 +76,16 @@ def test_web_setup_runs_in_project_python_and_reports_failure(monkeypatch, tmp_p
     monkeypatch.setattr(connector.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1))
     with pytest.raises(connector.ConnectorError, match='Could not complete sign-in'):
         connector.setup_channel('hark')
+
+
+def test_draft_failure_is_actionable_without_leaking_local_error_text():
+    from bench.study_connector import send_failure
+    progress = {'sent_at': None, 'error': "Muse's message box already has text in it. Send or delete it in Chrome, then try again."}
+    message = send_failure(progress, 'muse')
+    assert message.startswith('Nothing was sent:')
+    assert 'unsent draft' in message
+    assert 'will not overwrite' in message
+    # A later failure after confirmed sending must not claim nothing was sent.
+    assert not send_failure(progress | {'sent_at': 'now'}, 'muse').startswith('Nothing was sent:')
+    # Never relay unknown errors, which may contain local paths or secrets.
+    assert 'private-token' not in send_failure({'error': 'private-token'}, 'muse')
