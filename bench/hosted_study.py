@@ -147,7 +147,7 @@ class StudyHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def respond(self, status, body, mime, *, cookies=(), location=None):
+    def respond(self, status, body, mime, *, cookies=(), location=None, download=None):
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
@@ -156,6 +156,8 @@ class StudyHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Permissions-Policy", "microphone=(self)")
+        if download:
+            self.send_header("Content-Disposition", f'attachment; filename="{download}"')
         for cookie in cookies:
             self.send_header("Set-Cookie", cookie)
         if location:
@@ -252,6 +254,10 @@ class StudyHandler(BaseHTTPRequestHandler):
             name = {"/study-auth.js": "study_auth.js", "/study-connect.js": "study_connect.js"}[path]
             return self.respond(200, (TEMPLATES / name).read_bytes(),
                                 "text/javascript; charset=utf-8")
+        if path == "/study-muse.shortcut":
+            name = "Connect Study - Muse.shortcut"
+            return self.respond(200, (TEMPLATES / name).read_bytes(),
+                                "application/octet-stream", download=name)
         if path == "/study-connector.zip":
             script = TEMPLATES / "Set Up Study Connector.command"
             archive = BytesIO()

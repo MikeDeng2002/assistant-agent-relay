@@ -290,30 +290,49 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <p><code>~/Library/Application Support/bench-reader/bench-reader</code></p>
   </details>
   <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
-    <h3 id="connector-install-title">Install Study Connector in Terminal</h3>
-    <div id="connector-download">
-      <a class="btn" href="/study-connector.zip" download>Download Mac launcher</a>
-      <p>Unzip the download and double-click <strong>Set Up Study Connector.command</strong>. When Terminal asks for a pairing code, generate one below.</p>
+    <h3 id="connector-install-title">Set up this Mac</h3>
+    <div id="connector-shortcut" hidden>
+      <p>Connect Muse with a ready-made shortcut. No Terminal commands to copy.</p>
+      <a class="btn primary" href="/study-muse.shortcut" download="Connect Study - Muse.shortcut">Download Muse shortcut</a>
+      <ol class="help">
+        <li>Open the download and click <strong>Add Shortcut</strong>. You do not need to create or edit anything.</li>
+        <li>Generate and copy a pairing code below, then run <strong>Connect Study - Muse</strong> in Shortcuts.</li>
+        <li>Paste the code into the pop-up. Setup installs the connector and opens Muse. Sign in, then return here and click <strong>Test connection</strong>.</li>
+      </ol>
+      <details class="help">
+        <summary>First-time permission or missing app?</summary>
+        <p>Requires macOS 12 or later, Apple Shortcuts, and Google Chrome. In <strong>Shortcuts → Settings → Advanced</strong>, enable <strong>Allow Running Scripts</strong> if requested, then run the shortcut again. Approve the macOS prompts for this shortcut.</p>
+        <p>If Shortcuts is unavailable on this Mac, use the Terminal option below. If Chrome is missing, setup opens its official download page.</p>
+      </details>
+      <p class="help">Muse setup only. This shortcut does not complete WhatsApp, iMessage, or other agents’ setup.</p>
     </div>
-    <p id="connector-install-help">You can also copy the install command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
-    <button type="button" class="btn primary" id="connector-copy-install">Copy install command</button>
-    <p><code id="connector-command"></code></p>
+    <details id="connector-install-manual" open>
+      <summary>Set up using Terminal</summary>
+      <div id="connector-download">
+        <a class="btn" href="/study-connector.zip" download>Download Terminal launcher</a>
+        <p>Unzip and open <strong>Set Up Study Connector.command</strong>. macOS may require approval in Privacy &amp; Security.</p>
+      </div>
+      <p id="connector-install-help">Copy the install command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
+      <button type="button" class="btn" id="connector-copy-install">Copy install command</button>
+      <p><code id="connector-command"></code></p>
+    </details>
   </section>
   <div class="row connector-controls">
     <button type="button" class="btn" id="connector-pair">Generate pairing code</button>
     <button type="button" class="btn" id="connector-disconnect" hidden>Disconnect Mac</button>
   </div>
-  <section id="connector-terminal" class="connector-recovery" hidden>
-    <h3 id="connector-terminal-title">Pair this Mac in Terminal</h3>
+  <section id="connector-code-box" class="connector-recovery" hidden>
+    <p>Pairing code <code id="connector-code"></code></p>
+    <button type="button" class="btn primary" id="connector-copy-code">Copy pairing code</button>
+    <p class="help" id="connector-code-help"></p>
+  </section>
+  <details id="connector-terminal" class="connector-recovery" hidden>
+    <summary id="connector-terminal-title">Pair this Mac in Terminal</summary>
     <p id="connector-terminal-help"></p>
     <p><code id="connector-manual-command"></code></p>
     <button type="button" class="btn" id="connector-copy-start">Copy Terminal command</button>
-    <div id="connector-code-box" hidden>
-      <p>Pairing code <code id="connector-code"></code></p>
-      <button type="button" class="btn" id="connector-copy-code">Copy pairing code</button>
-    </div>
     <p class="help">Keep this Terminal window open while using Study.</p>
-  </section>
+  </details>
   <div class="row connector-controls">
     <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
     <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>

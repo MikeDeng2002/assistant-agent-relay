@@ -17,6 +17,7 @@ const studyConnect = (() => {
   let picker, status, direction, codeBox, dialog, codeText, setup, test, disconnect;
   let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
   let onUpdate, startCommand, taskNavigation;
+  let shortcutSupported = false, lastShortcutMode = null;
   let autoSetupAgent = null;
   let history = [];
   let renderedMessages = null, renderedAgent = null;
@@ -26,6 +27,13 @@ const studyConnect = (() => {
     if (!mounted) return;
     const { device, jobs } = latest;
     const channel = picker.selectedOptions[0]?.dataset.channel;
+    const useShortcut = shortcutSupported && channel === 'muse';
+    dialog.querySelector('#connector-shortcut').hidden = !useShortcut;
+    if (lastShortcutMode !== useShortcut) {
+      dialog.querySelector('#connector-install-manual').open = !useShortcut;
+      dialog.querySelector('#connector-terminal').open = !useShortcut;
+      lastShortcutMode = useShortcut;
+    }
     const available = device?.agents?.[selected] === channel;
     const verified = device?.verified?.includes(selected);
     const job = jobs.findLast(j => j.agent === selected && j.kind !== 'run');
@@ -72,6 +80,9 @@ const studyConnect = (() => {
       'If Terminal is already asking for a pairing code, paste the code below. Otherwise, run this command first. The code expires after five minutes.';
     dialog.querySelector('#connector-manual-command').textContent = reconnect ? startCommand : startCommand + ' --pair';
     codeBox.hidden = !hasCode;
+    dialog.querySelector('#connector-code-help').textContent = useShortcut ?
+      'Run Connect Study - Muse in Shortcuts and paste this code into the pop-up. It expires after five minutes; if needed, generate a new code here without reinstalling.' :
+      'Paste this code when Terminal asks. The code expires after five minutes.';
     if (!hasCode) codeText.textContent = '';
     if (!device && codeExpiry && !hasCode && !lastError) {
       status.textContent = 'Pairing code expired. Generate a new code to continue.';
@@ -172,6 +183,8 @@ const studyConnect = (() => {
     dialog = element;
     onUpdate = callback;
     taskNavigation = navigation;
+    // The signed artifact pairs only with this hosted Study origin.
+    shortcutSupported = !localLaunch && location.origin === 'https://restaurant-study-demo.onrender.com';
     picker = dialog.querySelector('#connector-agent');
     status = dialog.querySelector('#connector-status');
     direction = dialog.querySelector('#connector-help');

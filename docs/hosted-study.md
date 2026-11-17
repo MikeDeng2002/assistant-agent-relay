@@ -165,3 +165,21 @@ The website sends only participant messages and fixed task prompts to agents.
 It does not automatically grant agents email/calendar access, run a live AI
 interviewer, or perform the research team's rubric coding. Those remain separate
 study operations. Do not import pilot participant records as new responses.
+
+### Muse Shortcuts download
+
+The production Connect agent dialog offers `/study-muse.shortcut` for Muse on
+macOS. Download, open, Add Shortcut, and run **Connect Study - Muse**. Participants
+paste a fresh Study pairing code into its native dialog; they do not create a
+shortcut or open Terminal. First use can require enabling **Shortcuts → Settings
+→ Advanced → Allow Running Scripts** and approving macOS prompts. Google Chrome
+is required; setup links to its official download if absent.
+
+The checked-in artifact was signed with `shortcuts sign --mode anyone`, using
+`scripts/build_study_shortcut.py` and `scripts/setup-study-shortcut.sh`. This is
+Apple's shortcut-sharing signature, not a Developer ID app signature. Rebuild on
+macOS, then test the actual browser-downloaded artifact before replacing it.
+The shortcut is tied to the production Study origin, so the UI does not offer
+it on other origins or the local console. Other channels retain their existing
+setup. Pairing and opening Muse were tested on the development Mac; this does
+not establish a clean-machine login or a successful agent test reply.
