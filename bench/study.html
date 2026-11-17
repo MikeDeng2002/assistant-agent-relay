@@ -291,7 +291,11 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   </details>
   <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
     <h3 id="connector-install-title">Install Study Connector in Terminal</h3>
-    <p>Copy the command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
+    <div id="connector-download">
+      <a class="btn" href="/study-connector.zip" download>Download Mac launcher</a>
+      <p>Unzip the download and double-click <strong>Set Up Study Connector.command</strong>. When Terminal asks for a pairing code, generate one below.</p>
+    </div>
+    <p id="connector-install-help">You can also copy the install command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
     <button type="button" class="btn primary" id="connector-copy-install">Copy install command</button>
     <p><code id="connector-command"></code></p>
   </section>

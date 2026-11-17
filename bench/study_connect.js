@@ -66,7 +66,7 @@ const studyConnect = (() => {
       reconnect ? 'Restart Study Connector in Terminal' : 'Pair this Mac in Terminal';
     dialog.querySelector('#connector-terminal-help').textContent = reconnect ?
       'On the paired Mac, paste this command into Terminal and press Return.' :
-      'Paste this command into Terminal and press Return. When prompted, paste the pairing code within five minutes.';
+      'If Terminal is already asking for a pairing code, paste the code below. Otherwise, run this command first. The code expires after five minutes.';
     dialog.querySelector('#connector-manual-command').textContent = reconnect ? startCommand : startCommand + ' --pair';
     codeBox.hidden = !hasCode;
     if (!hasCode) codeText.textContent = '';
@@ -201,7 +201,8 @@ const studyConnect = (() => {
     const installCommand = 'installer=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh -o "$installer" && /bin/bash "$installer" ' + quote(location.origin) + ' --terminal';
     if (localLaunch) {
       dialog.querySelector('#connector-install-title').textContent = 'Install dependencies in Terminal';
-      dialog.querySelector('#connector-install p').textContent =
+      dialog.querySelector('#connector-download').hidden = true;
+      dialog.querySelector('#connector-install-help').textContent =
         'From the project directory in Terminal, run this command. Then generate a pairing code below.';
     }
     const installText = dialog.querySelector('#connector-command');

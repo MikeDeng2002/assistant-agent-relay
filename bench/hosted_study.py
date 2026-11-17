@@ -9,11 +9,13 @@ import sys
 from datetime import UTC, datetime
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
+from zipfile import ZipFile, ZipInfo
 
 from bench import study, study_devices, taskview
 
@@ -250,6 +252,15 @@ class StudyHandler(BaseHTTPRequestHandler):
             name = {"/study-auth.js": "study_auth.js", "/study-connect.js": "study_connect.js"}[path]
             return self.respond(200, (TEMPLATES / name).read_bytes(),
                                 "text/javascript; charset=utf-8")
+        if path == "/study-connector.zip":
+            script = TEMPLATES / "Set Up Study Connector.command"
+            archive = BytesIO()
+            entry = ZipInfo(script.name)
+            entry.create_system = 3
+            entry.external_attr = 0o100755 << 16
+            with ZipFile(archive, "w") as package:
+                package.writestr(entry, script.read_bytes())
+            return self.respond(200, archive.getvalue(), "application/zip")
         if path in ("/study", "/research"):
             return self.page("study.html" if path == "/study" else "study_research.html")
         token, member = self.auth()
