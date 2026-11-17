@@ -45,6 +45,11 @@ const studyConnect = (() => {
       job?.state === 'failed' ? job.error :
       verified ? 'Connected · test reply received' :
       available ? 'Mac online · ready to test' : 'Mac online · this agent is not configured on the Mac.');
+    status.className = 'connector-status' + (lastError || job?.state === 'failed' ? ' is-error' : verified ? ' is-ready' : '');
+    dialog.querySelector('#connector-pair-step').hidden = Boolean(device);
+    dialog.querySelector('#connector-pair-step').className = 'connector-step' + (!device && codeExpiry > Date.now() ? ' is-current' : '');
+    dialog.querySelector('#connector-agent-step').className = 'connector-step' + (device?.online ? ' is-current' : '');
+    dialog.querySelector('#connector-conversation').hidden = !device;
     const isIMessage = channel === 'imessage';
     const showIMessageSteps = device?.online && isIMessage && !verified;
     dialog.querySelector('#connector-imessage-steps').hidden = !showIMessageSteps;
@@ -56,15 +61,16 @@ const studyConnect = (() => {
     } else if (job?.kind === 'setup' && job.state === 'done' && !verified) {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
-    direction.hidden = !device?.online || Boolean(showIMessageSteps);
+    direction.hidden = !device?.online || Boolean(showIMessageSteps) || Boolean(verified);
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
     dialog.querySelector('#connector-next-help').textContent = verified ?
-      'Next: click ' + (taskNavigation?.label || 'Continue to task') + '. Every agent selected on the session page must pass its own connection test before the task begins.' :
-      'After pairing: finish signing in or scanning the QR code, leave the agent’s message box empty, then click Test connection once. Wait for Connected · test reply received. The Continue button appears after a successful test.';
+      'Ready. Click ' + (taskNavigation?.label || 'Continue to task') + ' to continue. Both selected agents need to pass the test.' :
+      !device ? 'After pairing, sign in to your agent and click Test connection.' : 'Sign in, leave the message box empty, then click Test connection. Wait for the reply.';
     renderMessages();
     dialog.querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
+    test.className = verified ? 'btn' : 'btn primary';
     const next = dialog.querySelector('#connector-continue');
     next.hidden = !taskNavigation || !verified;
     next.disabled = actionPending || !device?.online || jobs.some(j => ['queued', 'running'].includes(j.state));
@@ -74,6 +80,7 @@ const studyConnect = (() => {
     const reconnect = Boolean(device && !device.online);
     pair.hidden = Boolean(device);
     pair.disabled = actionPending;
+    pair.className = hasCode ? 'btn small' : 'btn primary';
     pair.textContent = hasCode || codeExpiry ? 'Generate new pairing code' : 'Generate pairing code';
     dialog.querySelector('#connector-terminal').hidden = !hasCode && !reconnect;
     dialog.querySelector('#connector-terminal-title').textContent =
@@ -85,7 +92,7 @@ const studyConnect = (() => {
     codeBox.hidden = !hasCode;
     dialog.querySelector('#connector-run-shortcut').hidden = !useShortcut || !hasCode;
     dialog.querySelector('#connector-code-help').textContent = useShortcut ?
-      'Copy this code, then click Run Study setup above. Choose Open Shortcuts if prompted and paste the code into the pop-up. It expires after five minutes; if needed, generate a new code here without reinstalling.' :
+      'Copy the code → Run Study setup → paste it into the pop-up. Choose Open Shortcuts if asked.' :
       'Paste this code when Terminal asks. The code expires after five minutes.';
     if (!hasCode) codeText.textContent = '';
     if (!device && codeExpiry && !hasCode && !lastError) {
@@ -220,12 +227,15 @@ const studyConnect = (() => {
       updateView();
       requestWebSetup();
     };
-    dialog.querySelector('#connector-pair').onclick = () => action(async () => {
-      const {code, expires_in} = await studyAuth.api(url + '/code', {});
-      codeExpiry = Date.now() + expires_in * 1000;
-      codeText.textContent = code;
-      dialog.querySelector('#connector-copy-code').textContent = 'Copy pairing code';
-    });
+    dialog.querySelector('#connector-pair').onclick = async () => {
+      await action(async () => {
+        const {code, expires_in} = await studyAuth.api(url + '/code', {});
+        codeExpiry = Date.now() + expires_in * 1000;
+        codeText.textContent = code;
+        dialog.querySelector('#connector-copy-code').textContent = 'Copy pairing code';
+      });
+      if (!codeBox.hidden) codeBox.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    };
     const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
     const installCommand = 'installer=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh -o "$installer" && /bin/bash "$installer" ' + quote(location.origin) + ' --terminal';
     if (localLaunch) {

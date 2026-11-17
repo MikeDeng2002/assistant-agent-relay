@@ -242,7 +242,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   .progress > div { transition: none; }
   .mic.on .dot { animation: none; }
 }
-.connector-dialog { width: min(540px, calc(100vw - 28px)); max-height: 90vh; overflow: auto; color: var(--text); }
+.connector-dialog { width: min(720px, calc(100vw - 28px)); max-height: 90vh; overflow: auto; color: var(--text); }
 .connector-dialog::backdrop { background: #111d16aa; }
 .connector-dialog form { margin: 0; }
 .connector-dialog label { display: grid; gap: 6px; margin: 16px 0 10px; font-weight: 650; }
@@ -252,6 +252,36 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .connector-controls { margin-top: 18px; }
 .connector-recovery { margin-top: 15px; }
 .connector-install { padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+
+/* Connection onboarding: one action group per step, with recovery kept secondary. */
+.connector-dialog { padding: clamp(18px, 3vw, 26px); }
+.connector-dialog h2 { font-size: 32px; margin-bottom: 0; }
+.connector-intro { margin: 6px 0 16px; font-size: 13px; }
+.connector-status { padding: 11px 14px; border-radius: 10px; background: var(--surface-2); font-size: 13px; margin: 14px 0; }
+.connector-status.is-error { background: var(--danger-soft); color: var(--danger); }
+.connector-status.is-ready { background: var(--ok-soft); color: var(--ok); }
+.connector-step { border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin: 12px 0; background: var(--surface); }
+.connector-step.is-current { border-color: var(--accent); }
+.connector-stephead { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.connector-stephead h3 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+.connector-stephead p { margin: 1px 0 0; font-size: 12px; color: var(--muted); }
+.connector-stepnum { display: grid; place-items: center; width: 31px; height: 31px; flex: none; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 750; }
+.connector-step .help { font-size: 13px; margin: 10px 0; }
+.connector-step .btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; }
+.connector-step .connector-controls { margin-top: 12px; }
+.connector-step details { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 15px; }
+.connector-permission { padding: 10px 12px; background: var(--surface-2); border-radius: 9px; }
+.connector-code-value { display: block; padding: 13px; border: 1px dashed var(--accent); border-radius: 9px; font: 16px/1.4 ui-monospace, SFMono-Regular, monospace; letter-spacing: .025em; background: var(--accent-soft); user-select: all; }
+.connector-code-label { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.connector-footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.connector-footer .btn { font-size: 12px; padding: 6px 10px; }
+#connector-conversation { border-top: 1px solid var(--border); padding-top: 18px; margin-top: 20px; }
+@media (max-width: 520px) {
+  .connector-dialog h2 { font-size: 29px; }
+  .connector-step { padding: 15px; }
+  .connector-step .row > .btn { flex: 1 1 auto; }
+  .connector-code-value { font-size: 13px; }
+}
 </style>
 </head>
 <body>
@@ -276,8 +306,49 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <span class="spacer"></span>
     <button type="submit" class="btn small">Close</button>
   </form>
-  <label>Agent<select id="connector-agent"></select></label>
+  <p class="help connector-intro">Add once. Pair your Mac. Connect your agent.</p>
+  <label>Choose an agent<select id="connector-agent"></select></label>
   <p id="connector-status" class="connector-status" role="status"></p>
+  <section class="connector-step" id="connector-install" aria-labelledby="connector-install-title">
+    <div class="connector-stephead"><span class="connector-stepnum" aria-hidden="true">1</span><div><h3 id="connector-install-title">Add Study Connect</h3><p>Only needed the first time</p></div></div>
+    <div id="connector-shortcut" hidden>
+      <div class="row"><a class="btn primary" href="https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5" target="_blank" rel="noopener">Add Study Connect ↗</a><span class="small muted">Already added? Go to step 2.</span></div>
+      <p class="help">Click <strong>Get Shortcut → Add Shortcut</strong>, then come back here.</p>
+      <p class="help connector-permission"><strong>First use:</strong> enable <strong>Allow Running Scripts</strong> in Shortcuts → Settings → Advanced.</p>
+
+    </div>
+    <details id="connector-install-manual" open>
+      <summary>Having trouble?</summary>
+      <p class="help">Prefer a file? <a href="/study-setup.shortcut" download="Study Connect.shortcut">Download Study Connect.shortcut</a>, open it, then click Add Shortcut. Requires macOS 12 or later. Adding does not start it automatically.</p>
+      <p class="help">Script permission in Chinese: 快捷指令 → 设置 → 高级 → 允许运行脚本.</p>
+      <div id="connector-download">
+        <a class="btn" href="/study-connector.zip" download>Download Terminal launcher</a>
+        <p>Unzip and open <strong>Set Up Study Connector.command</strong>. macOS may require approval in Privacy &amp; Security.</p>
+      </div>
+      <p id="connector-install-help">Copy the install command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
+      <button type="button" class="btn" id="connector-copy-install">Copy install command</button>
+      <p><code id="connector-command"></code></p>
+    </details>
+  </section>
+  <section class="connector-step" id="connector-pair-step" aria-labelledby="connector-pair-title">
+    <div class="connector-stephead"><span class="connector-stepnum" aria-hidden="true">2</span><div><h3 id="connector-pair-title">Pair this Mac</h3><p>Copy → Run → Paste in the pop-up</p></div></div>
+    <button type="button" class="btn primary" id="connector-pair">Generate pairing code</button>
+    <section id="connector-code-box" class="connector-recovery" hidden>
+      <p class="connector-code-label">Your pairing code · valid for 5 minutes</p>
+      <code id="connector-code" class="connector-code-value"></code>
+      <div class="row connector-controls"><button type="button" class="btn" id="connector-copy-code">Copy pairing code</button><a class="btn primary" id="connector-run-shortcut" href="shortcuts://run-shortcut?name=Study%20Connect" hidden>Run Study setup ↗</a></div>
+      <p class="help" id="connector-code-help"></p>
+    </section>
+  </section>
+  <details id="connector-terminal" class="connector-recovery" hidden>
+    <summary id="connector-terminal-title">Pair this Mac in Terminal</summary>
+    <p id="connector-terminal-help"></p>
+    <p><code id="connector-manual-command"></code></p>
+    <button type="button" class="btn" id="connector-copy-start">Copy Terminal command</button>
+    <p class="help">Keep this Terminal window open while using Study.</p>
+  </details>
+  <section class="connector-step" id="connector-agent-step" aria-labelledby="connector-agent-title">
+    <div class="connector-stephead"><span class="connector-stepnum" aria-hidden="true">3</span><div><h3 id="connector-agent-title">Sign in &amp; test</h3><p>Test both selected agents before starting Task 1</p></div></div>
   <p id="connector-help" class="help"></p>
   <ol id="connector-imessage-steps" class="help" hidden>
     <li>Click <strong>Set up iMessage</strong>. Enter the agent’s phone number or email if prompted.</li>
@@ -289,66 +360,21 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <p>In Full Disk Access, click <strong>+</strong>, press <strong>⌘⇧G</strong>, then paste this path and click <strong>Open</strong>.</p>
     <p><code>~/Library/Application Support/bench-reader/bench-reader</code></p>
   </details>
-  <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
-    <h3 id="connector-install-title">Set up this Mac</h3>
-    <div id="connector-shortcut" hidden>
-      <p>Add the ready-made shortcut, then start it directly from this webpage. No Downloads folder or Terminal needed.</p>
-      <a class="btn primary" href="https://www.icloud.com/shortcuts/a055e270a7c54af4bd3f6a77cd71e0b5" target="_blank" rel="noopener">1. Add Study shortcut</a>
-      <ol class="help">
-        <li><strong>Add once.</strong> Click the button above, then <strong>Get Shortcut → Add Shortcut</strong> on Apple’s page. Keep the name <strong>Study Connect</strong>. Return to this Study tab after adding it.</li>
-        <li><strong>Allow scripts (first time only).</strong> In <strong>Shortcuts → Settings → Advanced</strong>, turn on <strong>Allow Running Scripts</strong> (快捷指令 → 设置 → 高级 → 允许运行脚本). If it is already on, continue.</li>
-        <li><strong>Copy and run here.</strong> Click <strong>Generate pairing code</strong> below, copy it, then click <strong>Run Study setup</strong> on this webpage. If your browser asks, choose <strong>Open Shortcuts</strong>. Paste the code into the pop-up and click <strong>Connect</strong>.</li>
-        <li><strong>Finish your agent’s setup.</strong> Keep this webpage open. After pairing, it opens the selected agent’s login, QR code, or setup prompts. If nothing opens, click <strong>Open channel setup</strong>. Complete setup, then click <strong>Test connection</strong>.</li>
-      </ol>
-      <p class="help">Adding does not start setup automatically. The Run button below opens the pairing pop-up directly; you do not need to find a Run button in the Shortcuts app.</p>
-      <details class="help">
-        <summary>Trouble adding or running the shortcut?</summary>
-        <p>Requires macOS 12 or later and Apple Shortcuts. Web agents also need Google Chrome. If the Run button says the shortcut is missing, add <strong>Study Connect</strong> using the button above and keep its name unchanged.</p>
-        <p>You can also <a href="/study-setup.shortcut" download="Study Connect.shortcut">download the shortcut file</a>, open it and add it. If Shortcuts is unavailable, use the Terminal option below. If Chrome is missing, setup opens its official download page.</p>
-      </details>
-      <p class="help">One shortcut pairs this Mac for all agents. Each agent still needs its own login or permissions. WhatsApp may require Go; Dots/Slack and Telegram need study administrator configuration.</p>
+    <p class="help" id="connector-next-help"></p>
+    <div class="row connector-controls">
+      <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
+      <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>
+      <button type="button" class="btn primary" id="connector-continue" hidden disabled>Continue to task</button>
     </div>
-    <details id="connector-install-manual" open>
-      <summary>Set up using Terminal</summary>
-      <div id="connector-download">
-        <a class="btn" href="/study-connector.zip" download>Download Terminal launcher</a>
-        <p>Unzip and open <strong>Set Up Study Connector.command</strong>. macOS may require approval in Privacy &amp; Security.</p>
-      </div>
-      <p id="connector-install-help">Copy the install command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
-      <button type="button" class="btn" id="connector-copy-install">Copy install command</button>
-      <p><code id="connector-command"></code></p>
-    </details>
   </section>
-  <div class="row connector-controls">
-    <button type="button" class="btn" id="connector-pair">Generate pairing code</button>
-    <button type="button" class="btn" id="connector-disconnect" hidden>Disconnect Mac</button>
-  </div>
-  <section id="connector-code-box" class="connector-recovery" hidden>
-    <p>Pairing code <code id="connector-code"></code></p>
-    <button type="button" class="btn primary" id="connector-copy-code">Copy pairing code</button>
-    <a class="btn primary" id="connector-run-shortcut" href="shortcuts://run-shortcut?name=Study%20Connect" hidden>Run Study setup</a>
-    <p class="help" id="connector-code-help"></p>
-  </section>
-  <details id="connector-terminal" class="connector-recovery" hidden>
-    <summary id="connector-terminal-title">Pair this Mac in Terminal</summary>
-    <p id="connector-terminal-help"></p>
-    <p><code id="connector-manual-command"></code></p>
-    <button type="button" class="btn" id="connector-copy-start">Copy Terminal command</button>
-    <p class="help">Keep this Terminal window open while using Study.</p>
-  </details>
-  <p class="help" id="connector-next-help"></p>
-  <div class="row connector-controls">
-    <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
-    <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>
-    <button type="button" class="btn primary" id="connector-continue" hidden disabled>Continue to task</button>
-  </div>
-  <section class="connector-recovery" aria-label="Agent conversation">
+  <section class="connector-recovery" id="connector-conversation" aria-label="Agent conversation">
     <h3>Agent conversation</h3>
     <p class="help">Switch Agent above to see its messages. Connection tests and practice chats are separate from the study task.</p>
     <div id="connector-messages" aria-live="polite" style="max-height:320px;overflow:auto"></div>
     <label>Message<textarea id="connector-message" rows="2" maxlength="40000" placeholder="Write a practice message…"></textarea></label>
     <button type="button" class="btn primary" id="connector-send" disabled>Send message</button>
   </section>
+  <div class="connector-footer"><button type="button" class="btn" id="connector-disconnect" hidden>Disconnect Mac</button></div>
 </dialog>
 
 <script>
