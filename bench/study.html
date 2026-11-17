@@ -251,7 +251,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .connector-status { font-weight: 650; }
 .connector-controls { margin-top: 18px; }
 .connector-recovery { margin-top: 15px; }
-.connector-recovery summary { padding: 6px 0; }
+.connector-install { padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
 </style>
 </head>
 <body>
@@ -279,30 +279,27 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <label>Agent<select id="connector-agent"></select></label>
   <p id="connector-status" class="connector-status" role="status"></p>
   <p id="connector-help" class="help"></p>
+  <section class="connector-recovery connector-install" id="connector-install" aria-labelledby="connector-install-title">
+    <h3 id="connector-install-title">Install Study Connector in Terminal</h3>
+    <p>Copy the command, paste it into Terminal, and press Return. When it finishes, generate a pairing code below.</p>
+    <button type="button" class="btn primary" id="connector-copy-install">Copy install command</button>
+    <p><code id="connector-command"></code></p>
+  </section>
   <div class="row connector-controls">
-    <button type="button" class="btn" id="connector-pair">Connect this Mac</button>
-    <a id="connector-reopen" class="btn" href="study-connector://open" hidden>Open paired connector</a>
+    <button type="button" class="btn" id="connector-pair">Generate pairing code</button>
     <button type="button" class="btn" id="connector-disconnect" hidden>Disconnect Mac</button>
   </div>
-  <div id="connector-code-box" class="connector-recovery" hidden>
-    <p>Open the connector within five minutes to pair this Mac.</p>
-    <a id="connector-pair-link" class="btn primary">Open Study Connector</a>
-    <details>
-      <summary>Enter the pairing code manually</summary>
-      <p><code id="connector-manual-command"></code></p>
-      <p>Paste this code when prompted <code id="connector-code"></code></p>
-    </details>
-  </div>
-  <details class="connector-recovery" id="connector-install" open>
-    <summary>First time on this Mac? Install Study Connector</summary>
-    <p><a class="btn primary" href="https://github.com/MikeDeng2002/assistant-agent-relay/releases/download/connector-preview-20261115/Study-Connector-Installer.zip">Download Mac installer · test build</a></p>
-    <p>Unzip the download, open Install Study Connector, and click Install. A Terminal window shows progress. Return here when installation finishes.</p>
-    <p class="help">This internal test build has not been notarized by Apple and macOS may block it. The command below is an alternative installation method.</p>
-    <p>Open Terminal, paste this command and press Return. It downloads Study Connector and Python. When installation finishes, click Connect this Mac above.</p>
-    <p><code id="connector-command"></code></p>
-    <button type="button" class="btn" id="connector-copy-install">Copy installation command</button>
-    <p class="help">If Open Study Connector does nothing, complete this installation first. Each person installs it on their own Mac. Channel sign-in and system permissions follow after pairing.</p>
-  </details>
+  <section id="connector-terminal" class="connector-recovery" hidden>
+    <h3 id="connector-terminal-title">Pair this Mac in Terminal</h3>
+    <p id="connector-terminal-help"></p>
+    <p><code id="connector-manual-command"></code></p>
+    <button type="button" class="btn" id="connector-copy-start">Copy Terminal command</button>
+    <div id="connector-code-box" hidden>
+      <p>Pairing code <code id="connector-code"></code></p>
+      <button type="button" class="btn" id="connector-copy-code">Copy pairing code</button>
+    </div>
+    <p class="help">Keep this Terminal window open while using Study.</p>
+  </section>
   <div class="row connector-controls">
     <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
     <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>

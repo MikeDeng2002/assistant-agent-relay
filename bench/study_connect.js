@@ -15,9 +15,9 @@ const studyConnect = (() => {
   };
   const url = '/api/study/connection';
   let latest = { device: null, jobs: [] };
-  let picker, status, direction, codeBox, pairLink, codeText, setup, test, disconnect;
+  let picker, status, direction, codeBox, dialog, codeText, setup, test, disconnect;
   let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
-  let onUpdate;
+  let onUpdate, startCommand;
   let autoSetupAgent = null;
   let history = [];
   let renderedMessages = null, renderedAgent = null;
@@ -44,19 +44,34 @@ const studyConnect = (() => {
     } else if (job?.kind === 'setup' && job.state === 'done' && !verified) {
       instructions = 'Complete setup on your Mac, then click Test connection. ' + instructions;
     }
+    direction.hidden = !device?.online;
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
     renderMessages();
-    pairLink.closest('dialog').querySelector('#connector-install').hidden = Boolean(device?.online);
+    dialog.querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
     disconnect.hidden = !device;
-    pairLink.closest('dialog').querySelector('#connector-pair').hidden = Boolean(device);
-    pairLink.closest('dialog').querySelector('#connector-reopen').hidden = !device || device.online;
-    if (device || Date.now() > codeExpiry) codeBox.hidden = true;
+    const pair = dialog.querySelector('#connector-pair');
+    const hasCode = !device && Date.now() < codeExpiry;
+    const reconnect = Boolean(device && !device.online);
+    pair.hidden = Boolean(device);
+    pair.disabled = actionPending;
+    pair.textContent = hasCode || codeExpiry ? 'Generate new pairing code' : 'Generate pairing code';
+    dialog.querySelector('#connector-terminal').hidden = !hasCode && !reconnect;
+    dialog.querySelector('#connector-terminal-title').textContent =
+      reconnect ? 'Restart Study Connector in Terminal' : 'Pair this Mac in Terminal';
+    dialog.querySelector('#connector-terminal-help').textContent = reconnect ?
+      'On the paired Mac, paste this command into Terminal and press Return.' :
+      'Paste this command into Terminal and press Return. When prompted, paste the pairing code within five minutes.';
+    dialog.querySelector('#connector-manual-command').textContent = reconnect ? startCommand : startCommand + ' --pair';
+    codeBox.hidden = !hasCode;
+    if (!hasCode) codeText.textContent = '';
+    if (!device && codeExpiry && !hasCode && !lastError) {
+      status.textContent = 'Pairing code expired. Generate a new code to continue.';
+    }
   }
 
   function renderMessages() {
-    const dialog = pairLink.closest('dialog');
     const box = dialog.querySelector('#connector-messages');
     if (!box) return;
     const entries = history.filter(job => job.agent === selected && job.kind !== 'setup');
@@ -107,7 +122,7 @@ const studyConnect = (() => {
   }
 
   function maybeOpenWebSetup() {
-    if (!autoSetupAgent || !pairLink.closest('dialog').open || actionPending || !latest.device?.online) return;
+    if (!autoSetupAgent || !dialog.open || actionPending || !latest.device?.online) return;
     if (latest.jobs.some(job => ['queued', 'running'].includes(job.state))) return;
     const agent = autoSetupAgent;
     autoSetupAgent = null;
@@ -144,16 +159,16 @@ const studyConnect = (() => {
     }
   }
 
-  function mount(dialog, agents, callback, localLaunch) {
+  function mount(element, agents, callback, localLaunch) {
     if (mounted) return;
     mounted = true;
+    dialog = element;
     onUpdate = callback;
     picker = dialog.querySelector('#connector-agent');
     status = dialog.querySelector('#connector-status');
     direction = dialog.querySelector('#connector-help');
     codeBox = dialog.querySelector('#connector-code-box');
     codeText = dialog.querySelector('#connector-code');
-    pairLink = dialog.querySelector('#connector-pair-link');
     setup = dialog.querySelector('#connector-setup');
     test = dialog.querySelector('#connector-test');
     disconnect = dialog.querySelector('#connector-disconnect');
@@ -164,16 +179,6 @@ const studyConnect = (() => {
       const option = new Option(label + ' · ' + labels[channel], name);
       option.dataset.channel = channel;
       picker.add(option);
-    }
-    if (localLaunch) {
-      pairLink.onclick = event => {
-        event.preventDefault();
-        action(() => studyAuth.api(url + '/launch', {code: codeText.textContent}));
-      };
-      dialog.querySelector('#connector-reopen').onclick = event => {
-        event.preventDefault();
-        action(() => studyAuth.api(url + '/launch', {}));
-      };
     }
     selected = picker.value;
     picker.onchange = () => {
@@ -186,22 +191,23 @@ const studyConnect = (() => {
       const {code, expires_in} = await studyAuth.api(url + '/code', {});
       codeExpiry = Date.now() + expires_in * 1000;
       codeText.textContent = code;
-      pairLink.href = 'study-connector://pair/' + encodeURIComponent(code);
-      codeBox.hidden = false;
+      dialog.querySelector('#connector-copy-code').textContent = 'Copy pairing code';
     });
     const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const installCommand = 'installer=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh -o "$installer" && /bin/bash "$installer" ' + quote(location.origin);
-    dialog.querySelector('#connector-command').textContent = installCommand;
-    dialog.querySelector('#connector-copy-install').onclick = async event => {
-      try {
-        await navigator.clipboard.writeText(installCommand);
-        event.target.textContent = 'Copied · paste into Terminal';
-      } catch {
-        event.target.textContent = 'Select and copy the command above';
-      }
-    };
-    dialog.querySelector('#connector-manual-command').textContent =
-      (localLaunch ? 'uv run python -m bench.study_connector --origin ' : 'cd \"$HOME/Library/Application Support/Study Connector/assistant-agent-relay\" && .venv/bin/python -m bench.study_connector --origin ') + quote(location.origin);
+    const installCommand = 'installer=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/MikeDeng2002/assistant-agent-relay/codex/restaurant-study-imessage/scripts/install-study-connector.sh -o "$installer" && /bin/bash "$installer" ' + quote(location.origin) + ' --terminal';
+    if (localLaunch) {
+      dialog.querySelector('#connector-install-title').textContent = 'Install dependencies in Terminal';
+      dialog.querySelector('#connector-install p').textContent =
+        'From the project directory in Terminal, run this command. Then generate a pairing code below.';
+    }
+    const installText = dialog.querySelector('#connector-command');
+    installText.textContent = localLaunch ? 'uv sync --python 3.12 --locked --no-dev' : installCommand;
+    const commandText = dialog.querySelector('#connector-manual-command');
+    startCommand = (localLaunch ? 'uv run python -m bench.study_connector --origin ' :
+      'cd "$HOME/Library/Application Support/Study Connector/assistant-agent-relay" && .venv/bin/python -m bench.study_connector --origin ') + quote(location.origin);
+    copyButton('#connector-copy-install', installText);
+    copyButton('#connector-copy-start', commandText);
+    copyButton('#connector-copy-code', codeText);
     setup.onclick = () => {
       autoSetupAgent = null;
       action(() => queue('setup', selected));
@@ -217,9 +223,24 @@ const studyConnect = (() => {
     disconnect.onclick = () => action(async () => {
       await studyAuth.api(url + '/disconnect', {});
       latest.device = null;
+      codeExpiry = 0;
     });
     refresh();
     setInterval(refresh, 2500);
+  }
+
+  function copyButton(selector, source) {
+    const button = dialog.querySelector(selector);
+    const label = button.textContent;
+    button.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(source.textContent);
+        button.textContent = 'Copied';
+      } catch {
+        button.textContent = 'Select and copy the text above';
+      }
+      setTimeout(() => { button.textContent = label; }, 2000);
+    };
   }
 
   function queue(kind, agent, extra = {}) {

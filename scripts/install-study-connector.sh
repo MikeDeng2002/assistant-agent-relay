@@ -2,6 +2,11 @@
 # Bootstrap a private Study checkout on a participant's Mac.
 set -euo pipefail
 origin="${1:-}"
+mode="${2:-}"
+if [[ -n "$mode" && "$mode" != --terminal ]]; then
+  echo "Unknown installation option: $mode" >&2
+  exit 1
+fi
 if [[ "$(uname -s)" != Darwin ]]; then
   echo 'The Study Connector currently requires a Mac.' >&2
   exit 1
@@ -43,5 +48,9 @@ else
 fi
 cd "$checkout"
 uv sync --python 3.12 --locked --no-dev
-uv run --no-sync python -m bench.study_connector --origin "$origin" --install
-printf '\nReturn to %s/study and click Connect this Mac.\n' "$origin"
+if [[ "$mode" == --terminal ]]; then
+  printf '\nReturn to %s/study and generate a pairing code.\n' "$origin"
+else
+  uv run --no-sync python -m bench.study_connector --origin "$origin" --install
+  printf '\nReturn to %s/study to pair this Mac.\n' "$origin"
+fi

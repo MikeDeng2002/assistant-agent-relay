@@ -329,7 +329,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origin", required=True)
     parser.add_argument("--install", action="store_true")
-    parser.add_argument("--code")
+    pairing = parser.add_mutually_exclusive_group()
+    pairing.add_argument("--code")
+    pairing.add_argument("--pair", action="store_true", help="Prompt for a new Study pairing code.")
     parser.add_argument("--configure-agent", help=argparse.SUPPRESS)
     parser.add_argument("--channel", choices=sorted(set(SETUP) | {"imessage"}), help=argparse.SUPPRESS)
     parser.add_argument("--if-paired", action="store_true", help=argparse.SUPPRESS)
@@ -350,9 +352,11 @@ def main():
             return
         path = credential_file(origin)
         current = json.loads(path.read_text()) if path.exists() else {}
-        if args.if_paired and not args.code and not current:
+        if args.if_paired and args.code is None and not args.pair and not current:
             return
-        code = args.code if args.code is not None else (None if current else input("Study pairing code: ").strip())
+        code = args.code
+        if args.pair or (code is None and not current):
+            code = input("Study pairing code: ").strip()
         if code is not None:
             if not CODE.fullmatch(code):
                 raise ConnectorError("Enter the code shown in Study.")
