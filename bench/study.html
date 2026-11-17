@@ -317,6 +317,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <div class="row connector-controls">
     <button type="button" class="btn" id="connector-setup" disabled>Open channel setup</button>
     <button type="button" class="btn primary" id="connector-test" disabled>Test connection</button>
+    <button type="button" class="btn primary" id="connector-continue" hidden disabled>Continue to task</button>
   </div>
   <section class="connector-recovery" aria-label="Agent conversation">
     <h3>Agent conversation</h3>
@@ -668,7 +669,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const pick = s.agents || names.slice(0, 2);
     m.innerHTML = `<div class="session-heading">
       <div class="kicker">${esc(spec.title || S.task)}</div>
-      <h2>Set up the session</h2>
+      <h2>${spec.task_number ? `Task ${esc(spec.task_number)} · Set up the session` : 'Set up the session'}</h2>
       <p class="help">${names.length === 1 ? 'Choose the study day to continue with your agent.' : (spec.chat_mode === 'together' ? 'Two agents plan the same gathering side by side in one session.' : 'Two agents plan the same gathering, one at a time. The order reverses on day 2.')}</p>
     </div>
     <div class="panel setup-panel">
@@ -694,12 +695,16 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       </div>` : ''}
       ${dryRun ? '<p class="banner">The console is in dry-run mode: nothing is sent to the agents. Paste their replies by hand to try the flow.</p>' : ''}
       ${day1Done && S.day === 1 ? '<p class="banner ok">Day 1 is finished. Switch to Day 2 to continue with the same card.</p>' : ''}
-      <div class="nav"><button class="btn primary" id="s-go">${s.agents ? 'Save and continue' : 'Begin'}</button><span class="err" id="s-err"></span></div>
+      <div class="nav"><button class="btn primary" id="s-go">${s.agents ? 'Save and continue' : spec.task_number ? `Begin Task ${esc(spec.task_number)}` : 'Begin'}</button><span class="err" id="s-err"></span></div>
     </div>`;
     const firstDefault = s.day1_order && s.agents ? s.agents.indexOf(s.day1_order[0]) : (pidNum % 2 === 1 ? 0 : 1);
     $('s-first').value = String(Math.max(0, firstDefault));
     $('s-n').value = (s.agents?.length === 1 || names.length === 1) ? '1' : '2';
     if (HOSTED && names.length === 1) $('s-n').disabled = true;
+    if (spec.required_agents === 2) {
+      $('s-n').value = '2';
+      $('s-n').disabled = true;
+    }
     const one = () => $('s-n').value === '1';
     const showN = () => { $('s-a2-wrap').hidden = $('s-first-wrap').hidden = one(); if ($('setup-connector-2')) $('setup-connector-2').hidden = one(); };
     const note = () => { showN(); if (one()) { $('s-note').textContent = `Only ${$('s-a1').value}: one chat a day, no A/B comparison.`; return; } const d = +$('s-day').value; const a = [$('s-a1').value, $('s-a2').value]; const f = +$('s-first').value;
@@ -718,6 +723,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
     $('s-go').onclick = () => {
       const a = one() ? [$('s-a1').value] : [$('s-a1').value, $('s-a2').value], f = one() ? 0 : +$('s-first').value, day = +$('s-day').value;
+      if (spec.required_agents === 2 && a.length !== 2) { $('s-err').textContent = 'This task requires two agents.'; return; }
       if (!a[0] || (a.length === 2 && a[0] === a[1])) { $('s-err').textContent = 'Pick two different agents'; return; }
       if (usesConnector() && (!connection?.device?.online || a.some(agent => !connection.device.verified.includes(agent)))) {
         $('s-err').textContent = 'Connect this Mac and test each selected agent before beginning.';
@@ -740,6 +746,17 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     };
   }
   function saveSession() { const { ...data } = S.session; return saveFile('session.json', { data }); }
+
+  function continueFromConnection() {
+    if (!S) return;
+    if ((S.stage || 'setup') === 'setup') {
+      // Reuse session validation, including the second agent's connection test.
+      $('s-go').click();
+    } else {
+      // Preserve the current interview/chat and any unfinished answers.
+      $('main').scrollIntoView({ block: 'start' });
+    }
+  }
 
   // MARK: Questionnaires
 
@@ -1904,7 +1921,10 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           if (key === 'chat:0') updateTogether(); else if (key.startsWith('chat:')) updateChat(+key.slice(5));
           if (key === 'process') updateProcess();
           return S?.connector_jobs || result.jobs;
-        }, settings.local_connector);
+        }, settings.local_connector, {
+          label: spec.task_number ? `Continue to Task ${spec.task_number}` : 'Continue to task',
+          continue: continueFromConnection,
+        });
         button.onclick = () => {
           const chat = S?.stage?.match(/^chat:(\d+)$/);
           studyConnect.open(dialog, chat && Number(chat[1]) > 0 ? order()[Number(chat[1]) - 1] : null);

@@ -151,6 +151,16 @@ remain in Supabase under their original paths. Old browser tabs cannot save to
 an activated scoped task until refreshed. Hosted participants cannot use the
 local console's `browse=1` shortcut to bypass required answers.
 
+For Task 1, use the private repository's
+`Yueheng_Phase1_tasks/Restaurant_gathering_v1_console/study.json`, with
+`study_days: 1`, `task_number: 1`, and `required_agents: 2`. Keep this file in
+Render Secret Files, and use `restaurant-gathering-v1` as its result scope.
+The connection dialog shows **Continue to Task 1** after a successful test.
+Continuing from session setup checks both selected agents before opening the
+interview; an unfinished session resumes at its current step. The participant
+still completes the interview and confirms the scenario before task messages
+are sent. Connection tests and practice messages remain separate from the task.
+
 The website sends only participant messages and fixed task prompts to agents.
 It does not automatically grant agents email/calendar access, run a live AI
 interviewer, or perform the research team's rubric coding. Those remain separate

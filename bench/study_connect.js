@@ -16,7 +16,7 @@ const studyConnect = (() => {
   let latest = { device: null, jobs: [] };
   let picker, status, direction, codeBox, dialog, codeText, setup, test, disconnect;
   let selected = '', mounted = false, requested = false, lastError = '', codeExpiry = 0, actionPending = false;
-  let onUpdate, startCommand;
+  let onUpdate, startCommand, taskNavigation;
   let autoSetupAgent = null;
   let history = [];
   let renderedMessages = null, renderedAgent = null;
@@ -54,6 +54,9 @@ const studyConnect = (() => {
     dialog.querySelector('#connector-install').hidden = Boolean(device);
     setup.disabled = actionPending || !device?.online || !channel || pending;
     test.disabled = actionPending || !device?.online || !available || pending;
+    const next = dialog.querySelector('#connector-continue');
+    next.hidden = !taskNavigation || !verified;
+    next.disabled = actionPending || !device?.online || jobs.some(j => ['queued', 'running'].includes(j.state));
     disconnect.hidden = !device;
     const pair = dialog.querySelector('#connector-pair');
     const hasCode = !device && Date.now() < codeExpiry;
@@ -163,11 +166,12 @@ const studyConnect = (() => {
     }
   }
 
-  function mount(element, agents, callback, localLaunch) {
+  function mount(element, agents, callback, localLaunch, navigation) {
     if (mounted) return;
     mounted = true;
     dialog = element;
     onUpdate = callback;
+    taskNavigation = navigation;
     picker = dialog.querySelector('#connector-agent');
     status = dialog.querySelector('#connector-status');
     direction = dialog.querySelector('#connector-help');
@@ -175,6 +179,14 @@ const studyConnect = (() => {
     codeText = dialog.querySelector('#connector-code');
     setup = dialog.querySelector('#connector-setup');
     test = dialog.querySelector('#connector-test');
+    const next = dialog.querySelector('#connector-continue');
+    next.textContent = navigation?.label || 'Continue to task';
+    next.onclick = () => {
+      if (next.disabled || !latest.device?.online || !latest.device?.verified?.includes(selected)) return;
+      autoSetupAgent = null;
+      dialog.close();
+      taskNavigation?.continue(selected);
+    };
     disconnect = dialog.querySelector('#connector-disconnect');
 
     for (const {name, channel} of agents) {
