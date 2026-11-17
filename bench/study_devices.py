@@ -48,6 +48,10 @@ class Devices:
                     state text not null, sent_at text, replies text not null, error text
                 );
                 create index if not exists jobs_owner_created on jobs (owner, created);
+                create table if not exists requests (
+                    owner text not null, request_id text not null, job text not null,
+                    primary key (owner, request_id)
+                );
                 create index if not exists jobs_device_state on jobs (device, state, created);
             """)
 
@@ -159,6 +163,9 @@ class Devices:
 
     def queue(self, owner, configured, task, body):
         kind, agent = body.get("kind"), body.get("agent")
+        request_id = body.get("request_id")
+        if request_id is not None and (kind != "run" or not isinstance(request_id, str) or not 1 <= len(request_id) <= 200):
+            raise DeviceError(400, "Invalid message request ID.")
         if kind not in ("setup", "test", "run") or not isinstance(agent, str) or agent not in configured:
             raise DeviceError(400, "Choose an agent and a valid action.")
         channel = configured[agent]
@@ -181,6 +188,15 @@ class Devices:
         now = time.time()
         with self.transaction() as db:
             self.expire(db, owner, now)
+            if request_id is not None:
+                existing = db.execute("""select jobs.* from requests join jobs on jobs.id = requests.job
+                                         where requests.owner = ? and requests.request_id = ?""", (owner, request_id)).fetchone()
+                if existing:
+                    if any(existing[key] != value for key, value in {
+                        "agent": agent, "channel": channel, "kind": kind, "task": task, "step": step, "prompt": prompt
+                    }.items()):
+                        raise DeviceError(409, "This request ID was already used for another message.")
+                    return self.public(existing)
             device = db.execute("select * from devices where owner = ? and expires > ?", (owner, now)).fetchone()
             if device is None or device["active"] <= now - ONLINE_TTL:
                 raise DeviceError(409, "Open the Study Connector on your Mac.")
@@ -198,6 +214,8 @@ class Devices:
             job = uuid4().hex
             db.execute("""insert into jobs values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', null, '[]', null)""",
                        (job, owner, device["id"], agent, channel, kind, prompt, step, task, now, now))
+            if request_id is not None:
+                db.execute("insert into requests values (?, ?, ?)", (owner, request_id, job))
         return {"id": job, "agent": agent, "channel": channel, "kind": kind, "step": step,
                 "state": "queued", "sent_at": None, "replies": [], "error": None}
 

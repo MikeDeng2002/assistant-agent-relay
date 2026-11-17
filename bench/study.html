@@ -1307,7 +1307,7 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const C = chatOf(agent);
     const entry = { job: null, step, text, created_at: nowIso(), sent_at: null, ...extra };
     if (usesConnector()) {
-      const job = await studyConnect.queue('run', agent, {text, step});
+      const job = await studyConnect.queue('run', agent, {text, step, ...(extra.request_id ? {request_id: extra.request_id} : {})});
       entry.job = job.id;
       jobs.push(job);
     } else if (HOSTED) {
@@ -1856,48 +1856,144 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
   // MARK: Process reports, each agent, end of the day
 
+  const processSending = new Set();
+  let processSaving = false, processSavedSignature = '', processSaveError = '';
+
+  function processAutomatic() {
+    return !BROWSE && !dryRun && S?.stage === 'process' && !D().done.process &&
+      (usesConnector() || (!HOSTED && ONLINE));
+  }
+  function processInfo(agent) {
+    const P = (D().process[agent] = D().process[agent] || { sent: [] });
+    const t = transcript(agent);
+    const entry = n => chatOf(agent).sent.find(e => e.step === stepName('PROCESS', n));
+    const reply = n => t.filter(x => x.role === 'agent' && x.step === stepName('PROCESS', n));
+    const job = n => { const e = entry(n); return e && (jobById(e.job) || (S.connector_jobs || []).find(j => j.id === e.job)); };
+    const failed = n => Boolean(entry(n)?.enqueue_error || ['failed', 'stopped', 'cancelled'].includes(job(n)?.state));
+    const ready = n => Boolean(reply(n).length && (P.accepted?.[n] || (!failed(n) && (!job(n) || job(n).state === 'done'))));
+    const next = !entry(1) ? 1 : !entry(2) && ready(1) ? 2 : null;
+    return {P, entry, reply, job, failed, ready, next, done: Boolean(entry(2) && ready(2))};
+  }
+  function processRequestId(agent, n) {
+    const first = chatOf(agent).sent.find(e => !e.step.includes('PROCESS'));
+    return `process:${S.day}:${agent}:${first?.job || first?.created_at || S.pid}:${n}`;
+  }
+  async function sendProcessPrompt(agent, n, retry = false) {
+    const key = `${S.pid}:${processRequestId(agent, n)}`;
+    if (processSending.has(key)) return;
+    const info = processInfo(agent), previous = info.entry(n);
+    if (previous && !retry) return;
+    if (n === 2 && !info.ready(1)) return;
+    processSending.add(key);
+    delete info.P.error;
+    try {
+      if (retry) {
+        info.P.retry_requests ||= {};
+        if (!info.P.retry_requests[n] || info.P.retry_requests[n] === previous?.request_id) {
+          info.P.retry_requests[n] = `${processRequestId(agent, n)}:${crypto.randomUUID()}`;
+        }
+        await saveProgress(true);
+      }
+      const request_id = info.P.retry_requests?.[n] || processRequestId(agent, n);
+      const replacement = await sendToAgent(agent, spec.messages.process[n - 1], stepName('PROCESS', n), {round: null, request_id});
+      if (previous) {
+        const C = chatOf(agent);
+        C.sent.splice(C.sent.indexOf(replacement), 1);
+        previous.failed_jobs = [...(previous.failed_jobs || []), previous.job];
+        Object.assign(previous, replacement);
+        delete previous.enqueue_error;
+      }
+      await saveProgress(true);
+    } catch (error) {
+      info.P.error = {n, message: error.message};
+      await saveProgress(true);
+    } finally {
+      processSending.delete(key);
+      updateProcess();
+    }
+  }
+  async function saveProcessReports(signature) {
+    if (processSaving) return;
+    processSaving = true;
+    try {
+      await Promise.all(order().map(a => saveConversation(a)));
+      await saveProgress(true);
+      await cloudWrites;
+      if (saveErr || (HOSTED && pendingWrites.size)) throw new Error(saveErr || 'Some answers have not reached the study server.');
+      processSavedSignature = signature;
+      processSaveError = '';
+    } catch (error) {
+      processSaveError = error.message;
+    } finally {
+      processSaving = false;
+      updateProcess();
+    }
+  }
   function renderProcess(m) {
     ensurePolling();
-    const d = D();
     m.innerHTML = `<div class="panel"><div class="kicker">Day ${S.day} · Process reports</div><h2>Ask each agent how it worked</h2>
-      <p class="help">Two prompts to each agent. The second goes once the first has a reply. Their answers are saved as the agent’s own account of what it did.</p>
+      <p class="help">${processAutomatic() ? 'We send both prompts automatically. Each agent receives Prompt 2 after its first reply is complete. Keep this page open; when all answers are saved, click Finish.' : 'Two prompts to each agent. Send the second after the first reply is complete.'} These answers are the agent’s own account of what it did.</p>
       <div id="proc"></div>
-      <div class="nav"><span class="spacer"></span><span class="err" id="p-err"></span><button class="btn primary" id="p-done" disabled>Save and finish the day</button></div></div>`;
-    $('p-done').onclick = async () => { await Promise.all(order().map(a => saveConversation(a))); saveProgress(true); completeStage('process'); };
+      <div class="nav"><span class="small muted" id="p-status"></span><span class="spacer"></span><span class="err" id="p-err"></span><button class="btn" id="p-save-retry" hidden>Retry saving</button><button class="btn primary" id="p-done" disabled>Finish</button></div></div>`;
+    $('p-save-retry').onclick = () => { processSaveError = ''; updateProcess(); };
+    $('p-done').onclick = async () => {
+      $('p-done').disabled = true;
+      try {
+        await Promise.all(order().map(a => saveConversation(a)));
+        await saveProgress(true);
+        await cloudWrites;
+        if (saveErr || (HOSTED && pendingWrites.size)) throw new Error(saveErr || 'Some answers have not been saved.');
+        completeStage('process');
+      } catch (error) { processSaveError = error.message; updateProcess(); }
+    };
     updateProcess();
   }
   function updateProcess() {
-    const box = $('proc'); if (!box) return;
-    const d = D();
+    const box = $('proc'); if (!box || S?.stage !== 'process') return;
+    const automatic = processAutomatic(), pending = [];
     let allDone = true, html = '';
     order().forEach(agent => {
-      const P = (d.process[agent] = d.process[agent] || { sent: [] });
-      const t = transcript(agent);
-      const reply = n => t.filter(x => x.role === 'agent' && x.step === stepName('PROCESS', n));
-      const entry = n => chatOf(agent).sent.find(e => e.step === stepName('PROCESS', n));
-      const quiet = e => { const j = e && jobById(e.job); return !e || !e.job || !j || ['done', 'failed', 'stopped', 'cancelled'].includes(j.state); };
-      const p1 = entry(1), p2 = entry(2), r1 = reply(1), r2 = reply(2);
-      const next = !p1 ? 1 : (!p2 && r1.length && quiet(p1)) ? 2 : null;
-      if (!(p2 && r2.length)) allDone = false;
+      const I = processInfo(agent), {P, entry, reply, next} = I;
+      if (!I.done) allDone = false;
+      const connected = !usesConnector() || (connection?.device?.online && connection.device.verified.includes(agent));
+      if (automatic && connected && next && !P.error) pending.push([agent, next]);
       html += `<div class="panel" style="box-shadow:none"><h3>Agent ${labelOf(agent)} <span class="small muted">(${esc(agent)})</span></h3>
-        ${[1, 2].map(n => { const e = entry(n), r = reply(n); return `<p class="small"><b>Prompt ${n}.</b> ${esc(spec.messages.process[n - 1])}</p>
-          ${e ? `<div class="small muted">${r.length ? `Reply recorded ${esc(clock(r[r.length - 1].at))}` : 'Waiting for the reply…'}</div>${r.length ? `<details><summary>Show the reply</summary><div style="white-space:pre-wrap;font-size:13px">${esc(r.map(x => x.text).join('\n\n'))}</div></details>` : ''}` : ''}`; }).join('')}
-        <div class="row" style="margin-top:8px">${next ? `<button class="btn primary small" data-proc="${esc(agent)}" data-n="${next}">${sendLabel('Send prompt')} ${next}</button>` : ''}
-        <details><summary class="small">Paste a reply by hand</summary><textarea data-paste="${esc(agent)}" style="min-height:60px"></textarea><button class="btn small" data-paste-go="${esc(agent)}">Add</button></details></div></div>`;
+        ${[1, 2].map(n => { const e = entry(n), r = reply(n), failed = I.failed(n) && !P.accepted?.[n];
+          const state = I.ready(n) ? 'Reply complete and recorded' : failed ? 'Stopped. Check the agent conversation before retrying.' : r.length ? 'Recording the reply…' : e ? 'Waiting for the reply…' : n === 2 ? 'Waiting for Prompt 1 to finish' : automatic ? 'Preparing to send…' : '';
+          return `<p class="small"><b>Prompt ${n}.</b> ${esc(spec.messages.process[n - 1])}</p><div class="small ${failed ? 'err' : 'muted'}">${esc(state)}</div>
+          ${r.length ? `<details><summary>Show the reply</summary><div style="white-space:pre-wrap;font-size:13px">${esc(r.map(x => x.text).join('\n\n'))}</div></details>` : ''}
+          ${failed ? `<button class="btn small" data-proc="${esc(agent)}" data-n="${n}" data-retry="true">Retry prompt ${n}</button>` : ''}`;
+        }).join('')}
+        ${automatic && !connected && !I.done ? '<p class="err">Reconnect and test this agent to continue automatically.</p>' : ''}
+        ${P.error ? `<p class="err">${esc(P.error.message)}</p>` : ''}
+        <div class="row" style="margin-top:8px">${next && (!automatic || P.error) ? `<button class="btn primary small" data-proc="${esc(agent)}" data-n="${next}">${sendLabel(P.error ? 'Retry prompt' : 'Send prompt')} ${next}</button>` : ''}
+        <details><summary class="small">Trouble recording? Paste a complete reply</summary><label class="small">For <select data-paste-n="${esc(agent)}"><option value="1">Prompt 1</option><option value="2" ${entry(2) ? 'selected' : ''}>Prompt 2</option></select></label><textarea data-paste="${esc(agent)}" style="min-height:60px"></textarea><button class="btn small" data-paste-go="${esc(agent)}">Add reply</button></details></div></div>`;
     });
     if (box.dataset.k !== html) {
       box.innerHTML = html; box.dataset.k = html;
-      box.querySelectorAll('[data-proc]').forEach(b => b.onclick = async () => {
+      box.querySelectorAll('[data-proc]').forEach(b => b.onclick = () => {
+        const retry = b.dataset.retry === 'true';
+        if (retry && !confirm('Check the agent conversation first. Send this prompt again?')) return;
         b.disabled = true;
-        try { await sendToAgent(b.dataset.proc, spec.messages.process[+b.dataset.n - 1], stepName('PROCESS', +b.dataset.n), { round: null }); updateProcess(); }
-        catch (e) { $('p-err').textContent = e.message; b.disabled = false; }
+        sendProcessPrompt(b.dataset.proc, +b.dataset.n, retry);
       });
       box.querySelectorAll('[data-paste-go]').forEach(b => b.onclick = () => {
-        const ta = box.querySelector(`[data-paste="${b.dataset.pasteGo}"]`); if (!ta.value.trim()) return;
-        const C2 = chatOf(b.dataset.pasteGo); C2.manual.push(manualEntry(C2, ta.value.trim())); saveProgress(); box.dataset.k = ''; updateProcess();
+        const agent = b.dataset.pasteGo, ta = box.querySelector(`[data-paste="${agent}"]`);
+        const n = +box.querySelector(`[data-paste-n="${agent}"]`).value;
+        if (!ta.value.trim() || !processInfo(agent).entry(n)) return;
+        chatOf(agent).manual.push({text: ta.value.trim(), at: nowIso(), step: stepName('PROCESS', n), round: null});
+        const P = processInfo(agent).P; P.accepted = {...P.accepted, [n]: true};
+        saveProgress(); box.dataset.k = ''; updateProcess();
       });
     }
-    $('p-done') && ($('p-done').disabled = !allDone && !dryRun && ONLINE);
+    const signature = allDone ? JSON.stringify([S.pid, S.day, order().map(a => transcript(a))]) : '';
+    const saved = allDone && signature === processSavedSignature && !processSaving && !processSaveError;
+    $('p-done').disabled = !saved;
+    $('p-status').textContent = saved ? 'All four replies are saved. You can finish.' : allDone ? 'Saving the complete conversations…' : 'Collecting the agents’ replies…';
+    $('p-err').textContent = processSaveError;
+    $('p-save-retry').hidden = !processSaveError;
+    if (allDone && !saved && !processSaving && !processSaveError) void saveProcessReports(signature);
+    pending.forEach(([agent, n]) => { void sendProcessPrompt(agent, n); });
   }
 
   function renderDone(m) {
