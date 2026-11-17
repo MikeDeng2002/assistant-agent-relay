@@ -5,7 +5,7 @@ const studyConnect = (() => {
     muse: 'muse.ai', hark: 'hark.com', wajo: 'wajo.ai', telegram: 'Telegram',
   };
   const help = {
-    whatsapp: 'Scan the QR code in the browser tab with WhatsApp → Settings → Linked Devices on your phone. If Go is missing, install it from the official page that opens and try setup again.',
+    whatsapp: 'First, make sure you have access to this agent on WhatsApp and can get a reply in its chat. When asked for an address, enter the agent’s WhatsApp number with country code—not your own number. Then scan the QR code using your own WhatsApp → Settings → Linked Devices → Link a Device. Scanning connects your WhatsApp account; it does not create or activate an agent. Once both steps are complete, click Test connection. If Go is missing, install it from the official page that opens and try setup again.',
     slack: 'Sign in to the workspace containing your Dot in the dedicated Chrome window. The connector uses your locally configured Slack app token.',
     muse: 'Sign in to Muse in the dedicated Chrome window and wait for the main chat to open.',
     hark: 'Sign in to Hark in the dedicated Chrome window.',
@@ -65,6 +65,7 @@ const studyConnect = (() => {
     direction.textContent = verified ? 'Connection verified. You can chat below or continue your study task.' : instructions;
     dialog.querySelector('#connector-next-help').textContent = verified ?
       'Ready. Click ' + (taskNavigation?.label || 'Continue to task') + ' to continue. Both selected agents need to pass the test.' :
+      channel === 'whatsapp' ? 'Use the agent’s contact number and link your own WhatsApp account. Then click Test connection and wait for the agent’s reply.' :
       !device ? 'After pairing, sign in to your agent and click Test connection.' : 'Sign in, leave the message box empty, then click Test connection. Wait for the reply.';
     renderMessages();
     dialog.querySelector('#connector-install').hidden = Boolean(device);

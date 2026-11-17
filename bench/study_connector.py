@@ -95,12 +95,19 @@ def terminal_command(args):
 
 
 def address_dialog(name, description):
+    prompt = f"Enter the agent's {description} for {name}."
+    if description.startswith("WhatsApp"):
+        prompt += ("\n\nEnter the agent's contact number, NOT your own phone number. "
+                   "You must already have access to this agent on WhatsApp. "
+                   "Check that it replies in your WhatsApp chat first. "
+                   "The QR code in the next step links your own WhatsApp account; "
+                   "it does not create or activate an agent.")
     result = subprocess.run(["osascript", "-e", '''on run argv
         with timeout of 86400 seconds
         set answer to display dialog (item 1 of argv) default answer "" buttons {"Cancel", "Save"} default button "Save" with title "Study Connector"
         return text returned of answer
         end timeout
-    end run''', f"Enter the agent's {description} for {name}."], capture_output=True, text=True)
+    end run''', prompt], capture_output=True, text=True)
     if result.returncode:
         raise ConnectorError("Address entry cancelled. Open channel setup to try again.")
     return result.stdout.strip()
@@ -170,7 +177,7 @@ def setup_channel(channel):
                     subprocess.run(["open", "https://go.dev/dl/"], check=True)
                     raise ConnectorError("Install Go with the official Mac installer that just opened, then click Open channel setup again. No Terminal commands are needed.")
                 whatsapp.install()
-            with qr_window("WhatsApp", "On your phone, open WhatsApp → Settings → Linked Devices → Link a Device. Scan this code; it refreshes automatically.") as show:
+            with qr_window("WhatsApp", "Link your own WhatsApp account: on your phone, open WhatsApp → Settings → Linked Devices → Link a Device. Scan this code; it refreshes automatically. The agent's contact number is separate from your own number. Linking your account does not create or activate the agent; you must already have access to it on WhatsApp.") as show:
                 whatsapp.link(show=show)
         except whatsapp.WhatsAppError as error:
             raise ConnectorError("WhatsApp setup did not finish. Click Open channel setup to retry the QR code.") from error
